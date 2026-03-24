@@ -1,0 +1,252 @@
+================================================================================
+MAZI — Project Outline
+================================================================================
+
+Product Summary
+---------------
+Mazi is a minimalist, privacy-first social platform focused on chronological
+feeds, intentional following, and small communities. No algorithmic feed, no
+ads, no engagement manipulation.
+
+
+Core Principles
+---------------
+- Chronological feed only — no algorithm, no ranking, no suggested posts
+- Privacy-first — no tracking, no profiling, no data selling
+- Minimal, distraction-free UI — black-and-white aesthetic, lots of whitespace
+- Small communities over mass broadcasting
+- No ads, ever
+
+
+Tech Stack
+----------
+- Next.js 16 (App Router) with TypeScript
+- Tailwind CSS
+- Supabase (Postgres, Auth, Storage, Row Level Security)
+- Zod (validation)
+- nanoid (invite token generation)
+- Structured for future Expo / React Native mobile app reuse
+
+
+================================================================================
+MVP FEATURES (Implemented)
+================================================================================
+
+1. Authentication
+   - Email/password signup and login
+   - Logout
+   - Session handling via Supabase Auth
+   - Protected routes (middleware redirects unauthenticated users)
+   - Auto-create profile on signup (database trigger)
+
+2. User Profiles
+   - Fields: id, username, email, bio, avatar_url, created_at
+   - View own profile and other user profiles
+   - Edit own profile (username, bio)
+   - Upload avatar (Supabase Storage)
+   - Display user's posts
+   - Display joined communities
+   - Follow / unfollow users
+   - Follower and following counts
+
+3. Feed
+   - Two tabs: Following and Communities
+   - Following tab: posts from followed users (personal posts only)
+   - Communities tab: posts from communities the user has joined
+   - Both tabs in strict reverse chronological order
+   - No ranking, no suggested posts, no ads
+
+4. Posts
+   - Text posts with optional image upload
+   - Choose destination: personal timeline OR a specific community
+   - Like / unlike
+   - Comment count and like count displayed
+   - Delete own post
+   - Post detail page at /post/[id]
+
+5. Comments
+   - Text comments on posts
+   - Delete own comment
+   - Community moderators/creators can delete comments in their community
+
+6. Communities
+   - Fields: id, name, slug, description, creator_id, privacy_type, created_at
+   - Privacy types: public, invite_only
+   - Create community (generates unique slug)
+   - View community page (name, description, members, posts)
+   - Join public community
+   - Leave community
+   - Roles: creator, moderator, member
+
+7. Invite System (Full Flow)
+   - Invite by username: sends notification, invitee accepts/declines
+   - Invite by link: generates shareable token URL (/communities/join?token=xxx)
+   - Accept/decline from notification or invite link page
+   - Moderators and creators can invite
+   - Schema supports token expiry (expires_at field)
+
+8. Moderation
+   - Community creators and moderators can delete posts in their community
+   - Community creators and moderators can delete comments in their community
+   - Enforced at database level via Row Level Security
+
+9. Notifications
+   - Types: like, comment, follow, community_invite
+   - Chronological notification feed
+   - Unread count badge in navigation
+   - Mark individual as read
+   - Mark all as read
+   - Accept/decline community invites inline
+
+10. Search
+    - Search users by username
+    - Search communities by name
+    - Live search (no submit required)
+    - No discovery algorithm, no recommendations
+
+
+================================================================================
+DATABASE SCHEMA
+================================================================================
+
+Tables:
+  - profiles          (linked to auth.users via id)
+  - posts             (text + optional image, optional community)
+  - comments          (on posts)
+  - likes             (unique per user per post)
+  - follows           (unique per follower/following pair)
+  - communities       (public or invite_only)
+  - community_members (roles: member, moderator, creator)
+  - community_invites (by username or shareable token link)
+  - notifications     (like, comment, follow, community_invite)
+
+All tables have Row Level Security enabled.
+Migration file: supabase/migrations/00001_schema.sql
+
+Storage Buckets:
+  - avatars       (profile pictures)
+  - post-images   (post image uploads)
+
+
+================================================================================
+ROUTES
+================================================================================
+
+Public:
+  /                   Landing page (hero, privacy messaging, CTA)
+  /login              Email/password login
+  /signup             Email/password signup
+
+Protected (requires authentication):
+  /home               Feed with Following + Communities tabs
+  /profile/[username] User profile page
+  /settings           Edit profile, upload avatar, logout
+  /communities        List all communities, create new
+  /communities/[slug] Community detail (posts, members, invite panel)
+  /communities/join   Resolve invite token (?token=xxx)
+  /post/[id]          Post detail with comments
+  /notifications      Notification feed
+  /search             Search users and communities
+
+
+================================================================================
+ARCHITECTURE
+================================================================================
+
+Folder Structure:
+  app/                 App Router routes, layouts, pages
+    (auth)/            Login, signup (public)
+    (protected)/       All authenticated routes
+  components/          Reusable UI components
+    ui/                Button, Input, Textarea, Avatar, Card, EmptyState
+    nav/               DesktopNav, MobileNav
+    post/              PostCard, PostComposer
+    comment/           CommentList
+    feed/              FeedTabs
+    community/         CommunityCard, JoinLeaveButton, InvitePanel, CreateCommunityForm
+    notification/      NotificationItem, MarkAllReadButton
+    profile/           FollowButton
+    search/            SearchView
+  lib/                 Shared logic (mobile-reuse friendly)
+    supabase/          Client (browser + server) and middleware helpers
+    types/             TypeScript types for all database models
+    validators/        Zod schemas (auth, profile, post, comment, community)
+    queries/           Server-side read functions
+    actions/           Server actions (mutations)
+    utils/             Helpers (date formatting)
+  hooks/               Client-side hooks (reserved for future)
+  supabase/
+    migrations/        SQL migration files
+
+Key Architecture Rules:
+  - Supabase client setup centralized in lib/supabase/
+  - All database types in lib/types/database.ts
+  - Validation schemas in lib/validators/
+  - Query helpers in lib/queries/ (read operations)
+  - Server actions in lib/actions/ (write operations)
+  - Business logic decoupled from page components
+  - Client components only where interactivity is needed
+
+
+================================================================================
+DESIGN
+================================================================================
+
+- Black-and-white minimalist aesthetic
+- Geist Sans typography
+- Card-based but restrained — no heavy borders or shadows
+- Lots of whitespace
+- Desktop: top navigation bar
+- Mobile: bottom navigation bar
+- No bright accent colors (only red for errors/destructive actions)
+- Responsive from the start
+
+
+================================================================================
+VISIBILITY MODEL
+================================================================================
+
+- Landing page, login, and signup are public
+- Everything else requires authentication
+- Profiles are visible to all authenticated users
+- Community posts visible to all authenticated users
+- Notifications are private to the recipient
+
+
+================================================================================
+FUTURE ROADMAP (Post-MVP)
+================================================================================
+
+Mobile App:
+  - Expo / React Native app reusing lib/ (types, validators, queries, actions)
+  - Replace Supabase server client with mobile client
+  - Wrap in mobile shell initially, native screens later
+
+Features to Add:
+  - Infinite scroll / pagination for feeds
+  - Real-time updates via Supabase Realtime
+  - Invite link expiry and single-use tokens
+  - Moderator assignment UI (creator assigns/removes mods)
+  - Block / mute users
+  - Direct messages (optional, post-MVP)
+  - Email notifications (optional)
+  - Profile privacy settings
+  - Community rules / guidelines display
+  - Report content flow
+
+Technical Improvements:
+  - Supabase type generation (supabase gen types)
+  - Optimistic UI updates for likes/follows
+  - Image compression before upload
+  - Rate limiting on actions
+  - Error monitoring (Sentry or similar)
+  - Analytics (privacy-respecting, e.g. Plausible)
+
+
+================================================================================
+ENVIRONMENT VARIABLES
+================================================================================
+
+NEXT_PUBLIC_SUPABASE_URL       Supabase project URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY  Supabase anonymous/public key
+NEXT_PUBLIC_APP_URL            App base URL (http://localhost:3000 for dev)
