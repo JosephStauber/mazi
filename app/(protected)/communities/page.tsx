@@ -8,15 +8,15 @@ import { CreateCommunityForm } from "@/components/community/create-community-for
 import { CommunityFeedFilter } from "@/components/community/community-feed-filter";
 import { PostCard } from "@/components/post/post-card";
 import { EmptyState } from "@/components/ui/empty-state";
-
-function FeedFilterFallback() {
-  return (
-    <div className="h-9 w-full max-w-sm animate-pulse rounded-md bg-muted sm:ml-auto" />
-  );
-}
+import { PageHeader } from "@/components/nav/page-header";
+import { CommunitiesIcon } from "@/components/ui/icon";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function FeedFilterFallback() {
+  return <div className="h-9 w-full max-w-xs animate-pulse rounded-full bg-muted" />;
+}
 
 export default async function CommunitiesPage({
   searchParams,
@@ -42,24 +42,27 @@ export default async function CommunitiesPage({
   const communityPosts = await getCommunitiesFeed(user.id, filterId);
 
   return (
-    <div className="space-y-8">
-      <section className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="text-xl font-bold">Communities</h1>
-          <CreateCommunityForm />
-        </div>
+    <div>
+      <PageHeader title="Communities" action={<CreateCommunityForm />} />
 
-        <Suspense fallback={<FeedFilterFallback />}>
-          <CommunityFeedFilter memberCommunities={memberCommunities} />
-        </Suspense>
+      <section className="pt-4">
+        {memberCommunities.length > 0 && (
+          <div className="mb-3">
+            <Suspense fallback={<FeedFilterFallback />}>
+              <CommunityFeedFilter memberCommunities={memberCommunities} />
+            </Suspense>
+          </div>
+        )}
 
         {memberCommunities.length === 0 ? (
           <EmptyState
-            title="No community posts yet"
+            icon={<CommunitiesIcon size={24} />}
+            title="Join the conversation"
             description="Join a community below to see its posts here, or create your own."
           />
         ) : communityPosts.length === 0 ? (
           <EmptyState
+            icon={<CommunitiesIcon size={24} />}
             title="No posts yet"
             description={
               filterId
@@ -70,27 +73,24 @@ export default async function CommunitiesPage({
         ) : (
           <div className="divide-y divide-border">
             {communityPosts.map((post) => (
-              <PostCard
-                key={post.id}
-                post={post}
-                currentUserId={user.id}
-              />
+              <PostCard key={post.id} post={post} currentUserId={user.id} />
             ))}
           </div>
         )}
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground">
-          Browse communities
+      <section className="mt-8">
+        <h2 className="mb-3 px-1 text-sm font-semibold text-muted-foreground">
+          Discover
         </h2>
         {communities.length === 0 ? (
           <EmptyState
+            icon={<CommunitiesIcon size={24} />}
             title="No communities yet"
-            description="Create the first community or wait for others to start one."
+            description="Be the first — create a community to get things started."
           />
         ) : (
-          <div className="grid gap-3">
+          <div className="grid gap-2.5">
             {communities.map((community) => (
               <CommunityCard key={community.id} community={community} />
             ))}

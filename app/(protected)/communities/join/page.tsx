@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
+import { CommunitiesIcon } from "@/components/ui/icon";
 import { resolveInviteToken, acceptInvite } from "@/lib/actions/community";
 
 export default function JoinByTokenPage() {
@@ -44,20 +46,23 @@ export default function JoinByTokenPage() {
 
   if (loading) {
     return (
-      <div className="py-16 text-center text-sm text-muted-foreground">
-        Resolving invite...
+      <div className="flex justify-center py-20">
+        <Spinner />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="py-16 text-center">
-        <p className="text-sm text-red-500">{error}</p>
+      <div className="px-6 py-20 text-center">
+        <h2 className="text-base font-semibold text-foreground">
+          Invite unavailable
+        </h2>
+        <p className="mt-1.5 text-sm text-muted-foreground">{error}</p>
         <Button
           variant="outline"
           size="sm"
-          className="mt-4"
+          className="mt-5"
           onClick={() => router.push("/communities")}
         >
           Back to communities
@@ -67,20 +72,25 @@ export default function JoinByTokenPage() {
   }
 
   return (
-    <div className="flex justify-center py-16">
-      <Card className="max-w-sm w-full text-center space-y-4">
-        <h2 className="text-lg font-bold">
-          You&apos;re invited to join
-        </h2>
-        <p className="text-xl font-semibold">
-          {invite?.communities?.name}
-        </p>
+    <div className="flex justify-center px-4 py-16">
+      <Card className="w-full max-w-sm space-y-4 text-center">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[var(--radius-lg)] bg-foreground text-background">
+          <CommunitiesIcon size={30} />
+        </div>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-subtle">
+            You&apos;re invited to join
+          </p>
+          <h2 className="mt-1 text-xl font-bold tracking-tight text-foreground">
+            {invite?.communities?.name}
+          </h2>
+        </div>
         {invite?.communities?.description && (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm leading-relaxed text-muted-foreground">
             {invite.communities.description}
           </p>
         )}
-        <Button onClick={handleAccept} loading={accepting} className="w-full">
+        <Button onClick={handleAccept} loading={accepting} fullWidth>
           Accept &amp; join
         </Button>
       </Card>

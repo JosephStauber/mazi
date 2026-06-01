@@ -17,3 +17,10 @@ export function formatRelative(dateStr: string): string {
     day: "numeric",
   });
 }
+
+export function formatJoinDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}

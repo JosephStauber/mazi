@@ -29,6 +29,7 @@ export async function signup(formData: FormData) {
     email: formData.get("email") as string,
     username: formData.get("username") as string,
     password: formData.get("password") as string,
+    agreed: formData.get("agreed") as string,
   };
 
   const parsed = signupSchema.safeParse(raw);
@@ -65,6 +66,21 @@ export async function signup(formData: FormData) {
 
 export async function logout() {
   const supabase = await createClient();
+  await supabase.auth.signOut();
+  return { success: true };
+}
+
+/** Right to erasure: permanently delete the signed-in user's account. */
+export async function deleteAccount() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  const { error } = await supabase.rpc("delete_user");
+  if (error) return { error: error.message };
+
   await supabase.auth.signOut();
   return { success: true };
 }

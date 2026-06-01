@@ -138,6 +138,38 @@ export async function isFollowing(
   return !!data;
 }
 
+export async function getFollowers(userId: string): Promise<Profile[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("follows")
+    .select("follower:profiles!follower_id(*)")
+    .eq("following_id", userId)
+    .order("created_at", { ascending: false });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((r: any) => r.follower).filter(Boolean) as Profile[];
+}
+
+export async function getFollowingProfiles(userId: string): Promise<Profile[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("follows")
+    .select("following:profiles!following_id(*)")
+    .eq("follower_id", userId)
+    .order("created_at", { ascending: false });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((r: any) => r.following).filter(Boolean) as Profile[];
+}
+
+/** Set of user IDs the given user currently follows (for follow-state in lists). */
+export async function getFollowingIdSet(userId: string): Promise<Set<string>> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("follows")
+    .select("following_id")
+    .eq("follower_id", userId);
+  return new Set((data ?? []).map((r) => r.following_id));
+}
+
 export async function getUserCommunities(userId: string) {
   const supabase = await createClient();
   const { data } = await supabase

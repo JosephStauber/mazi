@@ -5,12 +5,20 @@ import Link from "next/link";
 import { signup } from "@/lib/actions/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { legal } from "@/lib/legal/config";
 
 export default function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [agreed, setAgreed] = useState(false);
 
   async function handleSubmit(formData: FormData) {
+    if (!agreed) {
+      setError(
+        "Please confirm your age and accept the Terms and Privacy Policy."
+      );
+      return;
+    }
     setLoading(true);
     setError(null);
     const result = await signup(formData);
@@ -23,12 +31,17 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold tracking-tight">Create your account</h1>
+    <div className="flex min-h-dvh items-center justify-center px-5 py-12">
+      <div className="w-full max-w-sm animate-fade-up">
+        <div className="mb-8 text-center">
+          <Link href="/" className="brand text-4xl">
+            mazi<span className="brand-dot">.</span>
+          </Link>
+          <h1 className="brand mt-6 text-2xl text-foreground">
+            Create your account
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Join Mazi — no algorithm, no ads
+            No algorithm, no ads — just people.
           </p>
         </div>
 
@@ -41,6 +54,7 @@ export default function SignupPage() {
             placeholder="your_username"
             required
             autoComplete="username"
+            hint="Letters, numbers, and underscores."
           />
           <Input
             id="email"
@@ -60,16 +74,49 @@ export default function SignupPage() {
             required
             minLength={6}
             autoComplete="new-password"
+            hint="At least 6 characters."
           />
-          {error && <p className="text-sm text-red-500">{error}</p>}
-          <Button type="submit" className="w-full" loading={loading}>
-            Sign up
+          <label className="flex cursor-pointer items-start gap-3 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              name="agreed"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[var(--accent)]"
+            />
+            <span className="leading-relaxed">
+              I&rsquo;m at least {legal.minimumAge} years old and I agree to the{" "}
+              <Link
+                href="/legal/terms"
+                className="font-medium text-accent hover:opacity-70"
+              >
+                Terms of Service
+              </Link>{" "}
+              and{" "}
+              <Link
+                href="/legal/privacy"
+                className="font-medium text-accent hover:opacity-70"
+              >
+                Privacy Policy
+              </Link>
+              .
+            </span>
+          </label>
+          {error && <p className="text-sm text-danger">{error}</p>}
+          <Button
+            type="submit"
+            fullWidth
+            size="lg"
+            loading={loading}
+            disabled={!agreed}
+          >
+            Create account
           </Button>
         </form>
 
-        <p className="text-center text-sm text-muted-foreground">
+        <p className="mt-6 text-center text-sm text-muted-foreground">
           Already have an account?{" "}
-          <Link href="/login" className="font-medium text-foreground hover:underline">
+          <Link href="/login" className="font-semibold text-foreground hover:underline">
             Log in
           </Link>
         </p>

@@ -4,65 +4,73 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Modal } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
+import { PlusIcon } from "@/components/ui/icon";
 import { createCommunity } from "@/lib/actions/community";
 
 export function CreateCommunityForm() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   async function handleSubmit(formData: FormData) {
     setLoading(true);
-    setError(null);
+    // Resolves only on error; success redirects server-side.
     const result = await createCommunity(formData);
-    if (result?.error) {
-      setError(result.error);
-      setLoading(false);
-    }
-  }
-
-  if (!open) {
-    return (
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        Create community
-      </Button>
-    );
+    setLoading(false);
+    if (result?.error) toast(result.error, "error");
   }
 
   return (
-    <form
-      action={handleSubmit}
-      className="space-y-3 rounded-lg border border-border p-4"
-    >
-      <h3 className="text-sm font-semibold">New community</h3>
-      <Input name="name" placeholder="Community name" required />
-      <Textarea
-        name="description"
-        placeholder="What's this community about?"
-        maxLength={300}
-      />
-      <select
-        name="privacy_type"
-        className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-        defaultValue="public"
+    <>
+      <Button size="sm" leftIcon={<PlusIcon size={16} />} onClick={() => setOpen(true)}>
+        Create
+      </Button>
+
+      <Modal
+        open={open}
+        onClose={() => !loading && setOpen(false)}
+        title="New community"
+        description="Start a space for people to gather around a shared interest."
       >
-        <option value="public">Public</option>
-        <option value="invite_only">Invite only</option>
-      </select>
-      {error && <p className="text-sm text-red-500">{error}</p>}
-      <div className="flex gap-2">
-        <Button type="submit" size="sm" loading={loading}>
-          Create
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => setOpen(false)}
-        >
-          Cancel
-        </Button>
-      </div>
-    </form>
+        <form action={handleSubmit} className="mt-4 space-y-3">
+          <Input name="name" placeholder="Community name" maxLength={50} required autoFocus />
+          <Textarea
+            name="description"
+            placeholder="What's this community about?"
+            maxLength={300}
+            rows={3}
+          />
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Privacy
+            </label>
+            <select
+              name="privacy_type"
+              defaultValue="public"
+              className="h-10 w-full rounded-[var(--radius-md)] border border-border bg-background px-3 text-sm text-foreground focus:border-foreground focus:outline-none focus:ring-4 focus:ring-foreground/5"
+            >
+              <option value="public">Public — anyone can join</option>
+              <option value="invite_only">Invite only — join by invite</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setOpen(false)}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" loading={loading}>
+              Create community
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </>
   );
 }

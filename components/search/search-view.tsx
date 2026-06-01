@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Input } from "@/components/ui/input";
 import { Avatar } from "@/components/ui/avatar";
+import { Tabs } from "@/components/ui/tabs";
+import { Spinner } from "@/components/ui/spinner";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SearchIcon, CommunitiesIcon, CloseIcon } from "@/components/ui/icon";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile, Community } from "@/lib/types/database";
 
@@ -12,130 +15,170 @@ function sanitizeSearchTerm(q: string): string {
   return q.replace(/[%_\\]/g, "").trim();
 }
 
+type Tab = "all" | "people" | "communities";
+
 export function SearchView() {
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState<Profile[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
+  const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("all");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const reqId = useRef(0);
 
-  const handleSearch = useCallback(async (q: string) => {
-    setQuery(q);
-    setError(null);
-    const safe = sanitizeSearchTerm(q);
+  useEffect(() => {
+    const safe = sanitizeSearchTerm(query);
     if (safe.length < 2) {
       setUsers([]);
       setCommunities([]);
       setSearched(false);
+      setLoading(false);
       return;
     }
 
-    const supabase = createClient();
-    const pattern = `%${safe}%`;
-    const [usersRes, communitiesRes] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("*")
-        .ilike("username", pattern)
-        .limit(20),
-      supabase
-        .from("communities")
-        .select("*")
-        .ilike("name", pattern)
-        .limit(20),
-    ]);
+    setLoading(true);
+    const id = ++reqId.current;
+    const timer = setTimeout(async () => {
+      const supabase = createClient();
+      const pattern = `%${safe}%`;
+      const [usersRes, communitiesRes] = await Promise.all([
+        supabase.from("profiles").select("*").ilike("username", pattern).limit(20),
+        supabase.from("communities").select("*").ilike("name", pattern).limit(20),
+      ]);
+      if (id !== reqId.current) return; // stale response
+      setUsers(usersRes.data ?? []);
+      setCommunities(communitiesRes.data ?? []);
+      setSearched(true);
+      setLoading(false);
+    }, 250);
 
-    const err =
-      usersRes.error?.message ??
-      communitiesRes.error?.message ??
-      null;
-    if (err) setError(err);
+    return () => clearTimeout(timer);
+  }, [query]);
 
-    setUsers(usersRes.data ?? []);
-    setCommunities(communitiesRes.data ?? []);
-    setSearched(true);
-  }, []);
+  const showPeople = tab === "all" || tab === "people";
+  const showCommunities = tab === "all" || tab === "communities";
+  const noResults = searched && users.length === 0 && communities.length === 0;
 
   return (
-    <div className="space-y-6">
-      <Input
-        placeholder="Search users or communities..."
-        value={query}
-        onChange={(e) => handleSearch(e.target.value)}
-        autoFocus
-      />
+    <div>
+      <div className="relative">
+        <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-subtle">
+          <SearchIcon size={18} />
+        </span>
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search people and communities"
+          autoFocus
+          className="h-11 w-full rounded-full border border-border bg-muted/40 pl-11 pr-10 text-[15px] text-foreground placeholder:text-subtle transition-colors focus:border-foreground focus:bg-background focus:outline-none focus:ring-4 focus:ring-foreground/5"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              inputRef.current?.focus();
+            }}
+            aria-label="Clear search"
+            className="absolute right-2.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <CloseIcon size={16} />
+          </button>
+        )}
+      </div>
 
-      {error && (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-          {error}
-        </p>
+      {searched && (
+        <div className="mt-4">
+          <Tabs
+            activeValue={tab}
+            onChange={(v) => setTab(v as Tab)}
+            items={[
+              { label: "All", value: "all" },
+              { label: "People", value: "people", count: users.length },
+              {
+                label: "Communities",
+                value: "communities",
+                count: communities.length,
+              },
+            ]}
+          />
+        </div>
       )}
 
-      {searched && users.length === 0 && communities.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-8">
-          No results found
-        </p>
+      {loading && !searched && (
+        <div className="flex justify-center py-16">
+          <Spinner />
+        </div>
       )}
 
-      {users.length > 0 && (
-        <div>
-          <h2 className="text-sm font-medium text-muted-foreground mb-2">
-            Users
-          </h2>
-          <div className="space-y-1">
-            {users.map((user) => (
+      {noResults && (
+        <EmptyState
+          icon={<SearchIcon size={24} />}
+          title="No results"
+          description={`Nothing matched "${query.trim()}". Try a different search.`}
+        />
+      )}
+
+      {!searched && !loading && (
+        <EmptyState
+          icon={<SearchIcon size={24} />}
+          title="Search Mazi"
+          description="Find people to follow and communities to join."
+        />
+      )}
+
+      {searched && !noResults && (
+        <div className="mt-2 divide-y divide-border">
+          {showPeople &&
+            users.map((user) => (
               <Link
                 key={user.id}
                 href={`/profile/${user.username}`}
-                className="flex items-center gap-2.5 rounded-md p-2 hover:bg-muted transition-colors"
+                className="flex items-center gap-3 py-3.5 transition-colors hover:bg-muted/40"
               >
-                <Avatar
-                  src={user.avatar_url}
-                  alt={user.username}
-                  size="sm"
-                />
-                <div>
-                  <span className="text-sm font-medium">{user.username}</span>
+                <Avatar src={user.avatar_url} alt={user.username} size="md" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {user.username}
+                  </p>
                   {user.bio && (
-                    <p className="text-xs text-muted-foreground line-clamp-1">
+                    <p className="truncate text-sm text-muted-foreground">
                       {user.bio}
                     </p>
                   )}
                 </div>
               </Link>
             ))}
-          </div>
-        </div>
-      )}
 
-      {communities.length > 0 && (
-        <div>
-          <h2 className="text-sm font-medium text-muted-foreground mb-2">
-            Communities
-          </h2>
-          <div className="space-y-1">
-            {communities.map((community) => (
+          {showCommunities &&
+            communities.map((community) => (
               <Link
                 key={community.id}
                 href={`/communities/${community.slug}`}
-                className="flex items-center justify-between rounded-md p-2 hover:bg-muted transition-colors"
+                className="flex items-center gap-3 py-3.5 transition-colors hover:bg-muted/40"
               >
-                <div>
-                  <span className="text-sm font-medium">{community.name}</span>
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-muted text-muted-foreground">
+                  <CommunitiesIcon size={20} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {community.name}
+                  </p>
                   {community.description && (
-                    <p className="text-xs text-muted-foreground line-clamp-1">
+                    <p className="truncate text-sm text-muted-foreground">
                       {community.description}
                     </p>
                   )}
                 </div>
-                <span className="text-xs text-muted-foreground">
+                <span className="shrink-0 text-xs text-subtle">
                   {community.privacy_type === "invite_only"
                     ? "Invite only"
                     : "Public"}
                 </span>
               </Link>
             ))}
-          </div>
         </div>
       )}
     </div>

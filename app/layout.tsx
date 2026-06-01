@@ -1,14 +1,19 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, Hanken_Grotesk } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider, themeScript } from "@/components/ui/theme";
+import { ToastProvider } from "@/components/ui/toast";
+import { CookieNotice } from "@/components/legal/cookie-notice";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const displaySerif = Fraunces({
+  variable: "--font-display",
   subsets: ["latin"],
+  style: ["normal", "italic"],
+  axes: ["opsz", "SOFT"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const bodySans = Hanken_Grotesk({
+  variable: "--font-body",
   subsets: ["latin"],
 });
 
@@ -24,11 +29,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
+        className={`${bodySans.variable} ${displaySerif.variable} font-sans antialiased`}
       >
-        {children}
+        <ThemeProvider>
+          <ToastProvider>
+            {children}
+            <CookieNotice />
+          </ToastProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

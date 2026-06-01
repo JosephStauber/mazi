@@ -1,8 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import type { PostWithAuthor } from "@/lib/types/database";
 
+export const FEED_PAGE_SIZE = 15;
+
 export async function getFollowingFeed(
-  userId: string
+  userId: string,
+  cursor?: string | null
 ): Promise<PostWithAuthor[]> {
   const supabase = await createClient();
 
@@ -12,10 +15,9 @@ export async function getFollowingFeed(
     .eq("follower_id", userId);
 
   const followingIds = (followsData ?? []).map((f) => f.following_id);
-
   if (followingIds.length === 0) return [];
 
-  const { data: posts } = await supabase
+  let query = supabase
     .from("posts")
     .select(
       `*, author:profiles!author_id(*), community:communities!community_id(id, name, slug)`
@@ -23,8 +25,11 @@ export async function getFollowingFeed(
     .in("author_id", followingIds)
     .is("community_id", null)
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(FEED_PAGE_SIZE);
 
+  if (cursor) query = query.lt("created_at", cursor);
+
+  const { data: posts } = await query;
   if (!posts) return [];
 
   return await enrichPosts(supabase, posts, userId);
@@ -36,7 +41,8 @@ export async function getFollowingFeed(
  */
 export async function getCommunitiesFeed(
   userId: string,
-  filterCommunityId?: string | null
+  filterCommunityId?: string | null,
+  cursor?: string | null
 ): Promise<PostWithAuthor[]> {
   const supabase = await createClient();
 
@@ -63,22 +69,31 @@ export async function getCommunitiesFeed(
 
   if (communityIds.length === 0) return [];
 
-  const { data: posts } = await supabase
+  let query = supabase
     .from("posts")
     .select(
       `*, author:profiles!author_id(*), community:communities!community_id(id, name, slug)`
     )
     .in("community_id", communityIds)
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(FEED_PAGE_SIZE);
 
+  if (cursor) query = query.lt("created_at", cursor);
+
+  const { data: posts } = await query;
   if (!posts) return [];
 
   return await enrichPosts(supabase, posts, userId);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function enrichPosts(supabase: any, posts: any[], currentUserId: string): Promise<PostWithAuthor[]> {
+export async function enrichPosts(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  posts: any[],
+  currentUserId: string
+): Promise<PostWithAuthor[]> {
   if (posts.length === 0) return [];
 
   const postIds = posts.map((p) => p.id);

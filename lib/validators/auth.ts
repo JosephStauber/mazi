@@ -16,6 +16,10 @@ export const signupSchema = z.object({
       "Username can only contain letters, numbers, and underscores"
     ),
   password: z.string().min(6, "Password must be at least 6 characters"),
+  agreed: z.literal("on", {
+    message:
+      "You must confirm your age and accept the Terms and Privacy Policy",
+  }),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

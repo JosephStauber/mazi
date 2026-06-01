@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import { joinCommunity, leaveCommunity } from "@/lib/actions/community";
 
 interface JoinLeaveButtonProps {
@@ -17,21 +18,27 @@ export function JoinLeaveButton({
   isCreator,
   privacyType,
 }: JoinLeaveButtonProps) {
+  const { toast } = useToast();
   const [member, setMember] = useState(isMember);
+  const [hovered, setHovered] = useState(false);
   const [loading, setLoading] = useState(false);
 
   if (isCreator) return null;
 
   async function handleClick() {
+    const next = !member;
+    setMember(next);
     setLoading(true);
-    if (member) {
-      await leaveCommunity(communityId);
-      setMember(false);
-    } else {
-      await joinCommunity(communityId);
-      setMember(true);
-    }
+    const result = next
+      ? await joinCommunity(communityId)
+      : await leaveCommunity(communityId);
     setLoading(false);
+    if (result?.error) {
+      setMember(!next);
+      toast(result.error, "error");
+    } else {
+      toast(next ? "Joined community" : "Left community", "success");
+    }
   }
 
   if (!member && privacyType === "invite_only") {
@@ -47,9 +54,12 @@ export function JoinLeaveButton({
       variant={member ? "outline" : "default"}
       size="sm"
       onClick={handleClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       loading={loading}
+      className={member ? "min-w-[5.5rem]" : undefined}
     >
-      {member ? "Leave" : "Join"}
+      {member ? (hovered ? "Leave" : "Joined") : "Join"}
     </Button>
   );
 }

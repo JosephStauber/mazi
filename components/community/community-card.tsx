@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CommunitiesIcon, LockIcon, CheckIcon } from "@/components/ui/icon";
 import type { CommunityWithMeta } from "@/lib/types/database";
 
 interface CommunityCardProps {
@@ -9,27 +10,35 @@ export function CommunityCard({ community }: CommunityCardProps) {
   return (
     <Link
       href={`/communities/${community.slug}`}
-      className="block rounded-lg border border-border p-4 hover:bg-muted/50 transition-colors"
+      className="group flex items-start gap-3.5 rounded-[var(--radius-lg)] border border-border p-4 transition-all hover:border-border-strong hover:bg-muted/40 active:scale-[0.99]"
     >
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-sm">{community.name}</h3>
-        <span className="text-xs text-muted-foreground">
-          {community.privacy_type === "invite_only" ? "Invite only" : "Public"}
-        </span>
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-foreground text-background">
+        <CommunitiesIcon size={22} />
       </div>
-      {community.description && (
-        <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
-          {community.description}
-        </p>
-      )}
-      <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-        <span>{community.members_count} members</span>
-        {community.is_member && (
-          <span className="rounded bg-foreground/5 px-1.5 py-0.5 font-medium text-foreground">
-            Joined
-          </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <h3 className="truncate text-sm font-semibold text-foreground">
+            {community.name}
+          </h3>
+          {community.privacy_type === "invite_only" && (
+            <LockIcon size={13} className="shrink-0 text-subtle" />
+          )}
+        </div>
+        {community.description && (
+          <p className="mt-0.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+            {community.description}
+          </p>
         )}
+        <p className="mt-1.5 text-xs text-subtle">
+          {community.members_count}{" "}
+          {community.members_count === 1 ? "member" : "members"}
+        </p>
       </div>
+      {community.is_member && (
+        <span className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
+          <CheckIcon size={12} /> Joined
+        </span>
+      )}
     </Link>
   );
 }

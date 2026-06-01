@@ -4,6 +4,8 @@ import { getNotifications } from "@/lib/queries/notifications";
 import { NotificationItem } from "@/components/notification/notification-item";
 import { MarkAllReadButton } from "@/components/notification/mark-all-read-button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/nav/page-header";
+import { BellIcon } from "@/components/ui/icon";
 
 export default async function NotificationsPage() {
   const user = await getCurrentUser();
@@ -13,19 +15,20 @@ export default async function NotificationsPage() {
   const hasUnread = notifications.some((n) => !n.read);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Notifications</h1>
-        {hasUnread && <MarkAllReadButton />}
-      </div>
+    <div>
+      <PageHeader
+        title="Notifications"
+        action={hasUnread ? <MarkAllReadButton /> : undefined}
+      />
 
       {notifications.length === 0 ? (
         <EmptyState
-          title="No notifications"
-          description="You're all caught up."
+          icon={<BellIcon size={24} />}
+          title="No notifications yet"
+          description="Likes, comments, follows and invites will show up here."
         />
       ) : (
-        <div className="space-y-1">
+        <div className="divide-y divide-border">
           {notifications.map((n) => (
             <NotificationItem key={n.id} notification={n} />
           ))}

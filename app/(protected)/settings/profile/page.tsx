@@ -1,20 +1,22 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar } from "@/components/ui/avatar";
+import { Spinner } from "@/components/ui/spinner";
+import { PageHeader } from "@/components/nav/page-header";
+import { useToast } from "@/components/ui/toast";
 import { updateProfile, uploadAvatar } from "@/lib/actions/profile";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile } from "@/lib/types/database";
 
 export default function ProfileSettingsPage() {
+  const { toast } = useToast();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -35,63 +37,52 @@ export default function ProfileSettingsPage() {
 
   async function handleProfileUpdate(formData: FormData) {
     setLoading(true);
-    setError(null);
-    setMessage(null);
     const result = await updateProfile(formData);
-    if (result?.error) setError(result.error);
-    else setMessage("Profile updated");
     setLoading(false);
+    if (result?.error) toast(result.error, "error");
+    else toast("Profile updated", "success");
   }
 
   async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setUploading(true);
     const formData = new FormData();
     formData.append("avatar", file);
     const result = await uploadAvatar(formData);
-    if (result?.error) setError(result.error);
+    setUploading(false);
+    if (result?.error) toast(result.error, "error");
     else if (result?.url) {
       setProfile((p) => (p ? { ...p, avatar_url: result.url! } : p));
-      setMessage("Avatar updated");
+      toast("Avatar updated", "success");
     }
   }
 
   if (!profile) {
     return (
-      <div className="py-8 text-center text-sm text-muted-foreground">
-        Loading…
+      <div>
+        <PageHeader title="Edit profile" back />
+        <div className="flex justify-center py-20">
+          <Spinner />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-md space-y-6">
-      <div>
-        <Link
-          href="/settings"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Back to settings
-        </Link>
-        <h1 className="mt-3 text-xl font-bold">Edit profile</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Photo, username, and bio. Other account options are in{" "}
-          <Link href="/settings" className="text-foreground underline-offset-2 hover:underline">
-            Settings
-          </Link>
-          .
-        </p>
-      </div>
+    <div>
+      <PageHeader title="Edit profile" back />
 
-      <div className="space-y-4">
+      <div className="space-y-6 pt-5">
         <div className="flex items-center gap-4">
           <Avatar src={profile.avatar_url} alt={profile.username} size="lg" />
-          <label className="cursor-pointer text-sm text-muted-foreground transition-colors hover:text-foreground">
-            Change avatar
+          <label className="cursor-pointer rounded-full border border-border px-3.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted">
+            {uploading ? "Uploading…" : "Change photo"}
             <input
               type="file"
               accept="image/*"
               className="hidden"
+              disabled={uploading}
               onChange={handleAvatarUpload}
             />
           </label>
@@ -112,8 +103,6 @@ export default function ProfileSettingsPage() {
             maxLength={160}
             placeholder="Tell people about yourself"
           />
-          {error && <p className="text-sm text-red-500">{error}</p>}
-          {message && <p className="text-sm text-green-600">{message}</p>}
           <Button type="submit" loading={loading}>
             Save changes
           </Button>

@@ -1,8 +1,13 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getFollowingFeed } from "@/lib/queries/feed";
-import { PostCard } from "@/components/post/post-card";
+import { loadMoreFollowing } from "@/lib/actions/feed";
+import { InfiniteFeed } from "@/components/feed/infinite-feed";
+import { PageHeader } from "@/components/nav/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import { HomeIcon } from "@/components/ui/icon";
 
 export default async function HomePage() {
   const supabase = await createClient();
@@ -11,33 +16,35 @@ export default async function HomePage() {
   } = await supabase.auth.getUser();
   if (!authUser) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", authUser.id)
-    .maybeSingle();
-
-  const userId = profile?.id ?? authUser.id;
-
-  const followingPosts = await getFollowingFeed(userId);
+  const followingPosts = await getFollowingFeed(authUser.id);
 
   return (
-    <div className="space-y-4">
+    <div>
+      <PageHeader title="Home" />
+
       {followingPosts.length === 0 ? (
         <EmptyState
-          title="No posts yet"
-          description="Follow people to see their personal posts here. Community posts appear on the Communities page."
-        />
+          icon={<HomeIcon size={26} />}
+          title="Your feed is quiet"
+          description="Follow people to see their posts here, in order. Mazi never shows you anything you didn't ask for."
+        >
+          <div className="flex gap-2">
+            <Link href="/search">
+              <Button size="sm">Find people</Button>
+            </Link>
+            <Link href="/communities">
+              <Button size="sm" variant="outline">
+                Browse communities
+              </Button>
+            </Link>
+          </div>
+        </EmptyState>
       ) : (
-        <div className="divide-y divide-border">
-          {followingPosts.map((post) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              currentUserId={userId}
-            />
-          ))}
-        </div>
+        <InfiniteFeed
+          initialPosts={followingPosts}
+          currentUserId={authUser.id}
+          loadMore={loadMoreFollowing}
+        />
       )}
     </div>
   );

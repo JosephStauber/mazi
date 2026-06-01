@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { getCurrentUser, getUserCommunities } from "@/lib/queries/profiles";
 import { PostComposer } from "@/components/post/post-composer";
+import { PageHeader } from "@/components/nav/page-header";
 
 export default async function ComposePage() {
   const user = await getCurrentUser();
@@ -10,27 +10,16 @@ export default async function ComposePage() {
   const communities = await getUserCommunities(user.id);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3 md:hidden">
-        <Link
-          href="/home"
-          className="text-sm font-semibold text-muted-foreground hover:text-foreground"
-        >
-          Cancel
-        </Link>
-        <h1 className="flex-1 text-center text-base font-semibold">New post</h1>
-        <span className="w-10" aria-hidden />
+    <div>
+      <PageHeader title="New post" back />
+      <div className="pt-4">
+        <PostComposer
+          communities={communities}
+          redirectOnSuccess="/home"
+          author={{ username: user.username, avatar_url: user.avatar_url }}
+          autoFocus
+        />
       </div>
-      <div className="hidden md:block">
-        <h1 className="text-2xl font-semibold tracking-tight">Create post</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Share a photo or thought with your followers or a community.
-        </p>
-      </div>
-      <PostComposer
-        communities={communities}
-        redirectOnSuccess="/home"
-      />
     </div>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+
 export default function Error({
   reset,
 }: {
@@ -7,17 +9,20 @@ export default function Error({
   reset: () => void;
 }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center text-center px-4">
-      <h1 className="text-2xl font-bold">Something went wrong</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        An unexpected error occurred.
+    <div className="flex min-h-dvh flex-col items-center justify-center px-6 text-center animate-fade-in">
+      <span className="text-5xl font-bold tracking-tighter text-foreground">
+        mazi
+      </span>
+      <h1 className="mt-6 text-xl font-semibold tracking-tight">
+        Something went wrong
+      </h1>
+      <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-muted-foreground">
+        An unexpected error occurred. Try again, and if it keeps happening, come
+        back in a moment.
       </p>
-      <button
-        onClick={reset}
-        className="mt-4 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90 transition-colors"
-      >
+      <Button onClick={reset} className="mt-6">
         Try again
-      </button>
+      </Button>
     </div>
   );
 }

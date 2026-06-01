@@ -1,37 +1,260 @@
 @import "tailwindcss";
 
+/* Class-based dark mode (toggle adds `.dark` to <html>) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================
+   Design tokens — "Editorial Ink": warm paper, rich ink,
+   a single vermillion signal accent. Reads like fine print.
+   ============================================================ */
 :root {
-  /* Instagram-adjacent neutrals */
-  --background: #ffffff;
-  --foreground: #262626;
-  --muted: #fafafa;
-  --muted-foreground: #737373;
-  --border: #dbdbdb;
-  --ring: #262626;
+  --background: #faf6ef;
+  --surface: #fffdf9;
+  --surface-2: #f3ede2;
+  --foreground: #1f1b16;
+  --muted: #efe9dd;
+  --muted-foreground: #7a7164;
+  --subtle: #a89e8d;
+  --border: #e4dccd;
+  --border-strong: #d2c7b2;
+  --ring: #e8552d;
+  --danger: #c0362b;
+  --danger-foreground: #fffdf9;
+
+  --accent: #e8552d;
+  --accent-foreground: #fffdf9;
+  --accent-muted: #fbe3d7;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+
+  --shadow-xs: 0 1px 2px 0 rgb(43 33 18 / 0.05);
+  --shadow-sm: 0 1px 3px 0 rgb(43 33 18 / 0.07), 0 1px 2px -1px rgb(43 33 18 / 0.05);
+  --shadow-md: 0 4px 16px -4px rgb(43 33 18 / 0.12), 0 2px 6px -2px rgb(43 33 18 / 0.07);
+  --shadow-lg: 0 12px 40px -8px rgb(43 33 18 / 0.18), 0 4px 12px -4px rgb(43 33 18 / 0.10);
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.dark {
+  --background: #14110d;
+  --surface: #1b1712;
+  --surface-2: #241f18;
+  --foreground: #f4ece0;
+  --muted: #241f18;
+  --muted-foreground: #a89c89;
+  --subtle: #6f6557;
+  --border: #2e2820;
+  --border-strong: #443c2f;
+  --ring: #ff6a44;
+  --danger: #f06a5d;
+  --danger-foreground: #14110d;
+
+  --accent: #ff6a44;
+  --accent-foreground: #14110d;
+  --accent-muted: #36231a;
+
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.6), 0 2px 6px -2px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 12px 40px -8px rgb(0 0 0 / 0.7), 0 4px 12px -4px rgb(0 0 0 / 0.5);
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-subtle: var(--subtle);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-ring: var(--ring);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-muted: var(--accent-muted);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, Helvetica, Arial, sans-serif;
-}
-
+/* ============================================================
+   Base
+   ============================================================ */
 * {
   border-color: var(--border);
 }
 
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  position: relative;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Faint paper grain — gives the printed, tactile feel */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.dark body::before {
+  opacity: 0.06;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* Refined scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 3px solid var(--background);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--subtle);
+}
+
 dialog::backdrop {
-  background: rgb(0 0 0 / 0.45);
+  background: rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(2px);
+}
+
+/* ============================================================
+   Motion primitives
+   ============================================================ */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes like-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.35); }
+  60% { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
+@keyframes heart-burst {
+  0% { opacity: 0; transform: scale(0.4); }
+  15% { opacity: 0.9; }
+  50% { transform: scale(1.15); }
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+@layer utilities {
+  .animate-fade-in { animation: fade-in 0.3s var(--ease-out) both; }
+  .animate-fade-up { animation: fade-up 0.4s var(--ease-out) both; }
+  .animate-scale-in { animation: scale-in 0.18s var(--ease-out) both; }
+  .animate-slide-up { animation: slide-up 0.32s var(--ease-out) both; }
+  .animate-like-pop { animation: like-pop 0.4s var(--ease-spring); }
+  .animate-heart-burst { animation: heart-burst 0.85s var(--ease-out) forwards; }
+
+  .ease-spring { transition-timing-function: var(--ease-spring); }
+
+  /* Skeleton shimmer surface */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--muted);
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(255 255 255 / 0.45),
+      transparent
+    );
+    animation: shimmer 1.6s infinite;
+  }
+  .dark .skeleton::after {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(255 255 255 / 0.06),
+      transparent
+    );
+  }
+
+  /* Staggered list reveal */
+  .stagger > * {
+    animation: fade-up 0.45s var(--ease-out) both;
+  }
+
+  /* Brand wordmark — Fraunces display, tight optical, signal dot */
+  .brand {
+    font-family: var(--font-display), Georgia, serif;
+    font-weight: 600;
+    font-optical-sizing: auto;
+    letter-spacing: -0.02em;
+    font-feature-settings: "ss01";
+  }
+  .brand-dot {
+    color: var(--accent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

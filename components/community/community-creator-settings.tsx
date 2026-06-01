@@ -129,9 +129,7 @@ export function CommunityCreatorSettings({
               <option value="invite_only">Invite only</option>
             </select>
           </div>
-          {formError && (
-            <p className="text-sm text-red-600 dark:text-red-400">{formError}</p>
-          )}
+          {formError && <p className="text-sm text-danger">{formError}</p>}
           <div className="flex flex-wrap gap-2">
             <Button type="submit" size="sm" loading={editLoading}>
               Save changes
@@ -165,11 +163,7 @@ export function CommunityCreatorSettings({
           and all of its posts, members, and invites will be permanently
           removed.
         </p>
-        {dialogError && (
-          <p className="mt-3 text-sm text-red-600 dark:text-red-400">
-            {dialogError}
-          </p>
-        )}
+        {dialogError && <p className="mt-3 text-sm text-danger">{dialogError}</p>}
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button
             type="button"

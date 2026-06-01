@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { mapSupabaseUserMessage } from "@/lib/supabase/map-error";
 import { ensureProfileForAuthUser } from "@/lib/queries/profiles";
+import { notifyMentions } from "@/lib/actions/mentions";
 import { createPostSchema } from "@/lib/validators/post";
 import { revalidatePath } from "next/cache";
 
@@ -44,14 +45,24 @@ export async function createPost(formData: FormData) {
     image_url = publicUrl;
   }
 
-  const { error } = await supabase.from("posts").insert({
-    author_id: user.id,
-    content: parsed.data.content,
-    image_url,
-    community_id: parsed.data.community_id || null,
-  });
+  const { data: post, error } = await supabase
+    .from("posts")
+    .insert({
+      author_id: user.id,
+      content: parsed.data.content,
+      image_url,
+      community_id: parsed.data.community_id || null,
+    })
+    .select("id")
+    .single();
 
   if (error) return { error: mapSupabaseUserMessage(error.message) };
+
+  await notifyMentions(supabase, {
+    content: parsed.data.content,
+    actorId: user.id,
+    postId: post.id,
+  });
 
   revalidatePath("/home");
   if (parsed.data.community_id) {
@@ -63,6 +74,29 @@ export async function createPost(formData: FormData) {
       .single();
     if (comm?.slug) revalidatePath(`/communities/${comm.slug}`);
   }
+  return { success: true };
+}
+
+export async function editPost(postId: string, content: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  const parsed = createPostSchema.safeParse({ content });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const { error } = await supabase
+    .from("posts")
+    .update({ content: parsed.data.content })
+    .eq("id", postId)
+    .eq("author_id", user.id);
+
+  if (error) return { error: mapSupabaseUserMessage(error.message) };
+
+  revalidatePath("/home");
+  revalidatePath(`/post/${postId}`);
   return { success: true };
 }
 

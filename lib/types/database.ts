@@ -29,6 +29,7 @@ export type Comment = {
   post_id: string;
   author_id: string;
   content: string;
+  parent_id: string | null;
   created_at: string;
 };
 
@@ -97,7 +98,8 @@ export type NotificationType =
   | "like"
   | "comment"
   | "follow"
-  | "community_invite";
+  | "community_invite"
+  | "mention";
 
 export type Notification = {
   id: string;

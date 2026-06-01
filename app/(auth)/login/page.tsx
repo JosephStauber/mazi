@@ -23,12 +23,17 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
+    <div className="flex min-h-dvh items-center justify-center px-5 py-12">
+      <div className="w-full max-w-sm animate-fade-up">
+        <div className="mb-8 text-center">
+          <Link href="/" className="brand text-4xl">
+            mazi<span className="brand-dot">.</span>
+          </Link>
+          <h1 className="brand mt-6 text-2xl text-foreground">
+            Welcome back
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Log in to your Mazi account
+            Log in to your account
           </p>
         </div>
 
@@ -51,16 +56,25 @@ export default function LoginPage() {
             required
             autoComplete="current-password"
           />
-          {error && <p className="text-sm text-red-500">{error}</p>}
-          <Button type="submit" className="w-full" loading={loading}>
+          {error && <p className="text-sm text-danger">{error}</p>}
+          <Button type="submit" fullWidth size="lg" loading={loading}>
             Log in
           </Button>
         </form>
 
-        <p className="text-center text-sm text-muted-foreground">
+        <p className="mt-6 text-center text-sm text-muted-foreground">
           Don&apos;t have an account?{" "}
-          <Link href="/signup" className="font-medium text-foreground hover:underline">
+          <Link href="/signup" className="font-semibold text-foreground hover:underline">
             Sign up
+          </Link>
+        </p>
+        <p className="mt-8 text-center text-xs text-subtle">
+          <Link href="/legal/privacy" className="hover:text-foreground">
+            Privacy
+          </Link>{" "}
+          ·{" "}
+          <Link href="/legal/terms" className="hover:text-foreground">
+            Terms
           </Link>
         </p>
       </div>

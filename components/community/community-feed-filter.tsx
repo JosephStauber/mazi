@@ -31,23 +31,20 @@ export function CommunityFeedFilter({
   }
 
   return (
-    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-      <h2 className="text-sm font-semibold text-foreground">Community feed</h2>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:min-w-[220px] sm:flex-1 sm:max-w-sm">
-        <span className="sr-only sm:not-sr-only">Show posts from</span>
-        <select
-          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          value={selected}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          <option value="">All my communities</option>
-          {memberCommunities.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </label>
-    </div>
+    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+      <span className="shrink-0">Showing</span>
+      <select
+        className="h-9 flex-1 rounded-full border border-border bg-muted/40 px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus:border-foreground focus:outline-none focus:ring-4 focus:ring-foreground/5"
+        value={selected}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">All my communities</option>
+        {memberCommunities.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

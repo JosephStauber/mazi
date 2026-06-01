@@ -5,10 +5,22 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { Modal } from "@/components/ui/modal";
+import { RichText } from "@/components/ui/rich-text";
+import { useToast } from "@/components/ui/toast";
+import {
+  HeartIcon,
+  CommentIcon,
+  ShareIcon,
+  MoreIcon,
+  EditIcon,
+  TrashIcon,
+} from "@/components/ui/icon";
 import type { PostWithAuthor } from "@/lib/types/database";
-import { toggleLike } from "@/lib/actions/post";
-import { deletePost } from "@/lib/actions/post";
+import { toggleLike, deletePost, editPost } from "@/lib/actions/post";
 import { formatRelative } from "@/lib/utils/date";
+import { cn } from "@/lib/utils/cn";
 
 interface PostCardProps {
   post: PostWithAuthor;
@@ -17,273 +29,312 @@ interface PostCardProps {
 }
 
 export function PostCard({ post, currentUserId, canModerate }: PostCardProps) {
+  const { toast } = useToast();
   const [liked, setLiked] = useState(post.liked_by_user);
   const [likesCount, setLikesCount] = useState(post.likes_count);
-  const [deleting, setDeleting] = useState(false);
+  const [likeAnim, setLikeAnim] = useState(false);
+  const [burst, setBurst] = useState(false);
+
+  const [content, setContent] = useState(post.content);
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(post.content);
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const [menuOpen, setMenuOpen] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const menuWrapRef = useRef<HTMLDivElement>(null);
-  const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleted, setDeleted] = useState(false);
+
+  const menuRef = useRef<HTMLDivElement>(null);
+  const lastTap = useRef(0);
 
   const isOwner = post.author_id === currentUserId;
 
   useEffect(() => {
     if (!menuOpen) return;
-    function onPointerDown(e: PointerEvent) {
-      if (!menuWrapRef.current?.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
+    function onDown(e: PointerEvent) {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
     }
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
   }, [menuOpen]);
 
-  async function handleLike() {
-    setLiked(!liked);
-    setLikesCount(liked ? likesCount - 1 : likesCount + 1);
-    await toggleLike(post.id);
+  function applyLike(next: boolean) {
+    setLiked(next);
+    setLikesCount((c) => c + (next ? 1 : -1));
+    if (next) {
+      setLikeAnim(true);
+      setTimeout(() => setLikeAnim(false), 420);
+    }
+    toggleLike(post.id).catch(() => {
+      setLiked(!next);
+      setLikesCount((c) => c + (next ? -1 : 1));
+      toast("Couldn't update like", "error");
+    });
   }
 
-  function openDeleteDialog() {
-    setMenuOpen(false);
-    setDeleteError(null);
-    deleteDialogRef.current?.showModal();
+  function handleLike() {
+    applyLike(!liked);
   }
 
-  function closeDeleteDialog() {
-    deleteDialogRef.current?.close();
-    setDeleteError(null);
+  function handleImageTap() {
+    const now = Date.now();
+    if (now - lastTap.current < 300) {
+      if (!liked) applyLike(true);
+      setBurst(true);
+      setTimeout(() => setBurst(false), 850);
+    }
+    lastTap.current = now;
+  }
+
+  async function handleShare() {
+    const url = `${window.location.origin}/post/${post.id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ url, title: "Mazi post" });
+        return;
+      } catch {
+        return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast("Link copied", "success");
+    } catch {
+      toast("Couldn't copy link", "error");
+    }
+  }
+
+  async function saveEdit() {
+    const trimmed = editValue.trim();
+    if (!trimmed) return;
+    setSavingEdit(true);
+    const result = await editPost(post.id, trimmed);
+    setSavingEdit(false);
+    if (result?.error) {
+      toast(result.error, "error");
+      return;
+    }
+    setContent(trimmed);
+    setEditing(false);
+    toast("Post updated", "success");
   }
 
   async function confirmDelete() {
-    setDeleteError(null);
     setDeleting(true);
     const result = await deletePost(post.id);
     setDeleting(false);
     if (result?.error) {
-      setDeleteError(result.error);
+      toast(result.error, "error");
       return;
     }
-    closeDeleteDialog();
+    setConfirmOpen(false);
+    setDeleted(true);
+    toast("Post deleted", "success");
   }
 
+  if (deleted) return null;
+
   return (
-    <article className="border-b border-border bg-background last:border-b-0">
-      <div className="flex items-center gap-3 px-0 py-3">
+    <article className="px-4 py-4 transition-colors sm:px-5">
+      <div className="flex items-center gap-3">
         <Link href={`/profile/${post.author.username}`} className="shrink-0">
-          <Avatar
-            src={post.author.avatar_url}
-            alt={post.author.username}
-            size="md"
-          />
+          <Avatar src={post.author.avatar_url} alt={post.author.username} size="sm" />
         </Link>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
+          <Link
+            href={`/profile/${post.author.username}`}
+            className="text-[15px] font-semibold text-foreground hover:underline"
+          >
+            {post.author.username}
+          </Link>
+          {post.community && (
             <Link
-              href={`/profile/${post.author.username}`}
-              className="text-sm font-semibold text-foreground hover:opacity-70"
+              href={`/communities/${post.community.slug}`}
+              className="text-xs text-muted-foreground hover:text-foreground"
             >
-              {post.author.username}
+              in {post.community.name}
             </Link>
-            {post.community && (
-              <span className="text-xs text-muted-foreground">
-                ·{" "}
-                <Link
-                  href={`/communities/${post.community.slug}`}
-                  className="hover:opacity-70"
-                >
-                  {post.community.name}
-                </Link>
-              </span>
-            )}
-            <span className="text-xs text-muted-foreground">
-              · {formatRelative(post.created_at)}
-            </span>
-          </div>
+          )}
+          <span className="text-xs text-subtle">
+            · {formatRelative(post.created_at)}
+          </span>
         </div>
+
         {(isOwner || canModerate) && (
-          <div className="relative shrink-0" ref={menuWrapRef}>
-            <button
-              type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-expanded={menuOpen}
+          <div className="relative shrink-0" ref={menuRef}>
+            <IconButton
+              label="Post options"
+              size="sm"
               aria-haspopup="menu"
-              aria-label="Post options"
+              aria-expanded={menuOpen}
               onClick={() => setMenuOpen((o) => !o)}
+              className="text-muted-foreground"
             >
-              <MoreHorizontalIcon />
-            </button>
-            {menuOpen ? (
+              <MoreIcon size={20} />
+            </IconButton>
+            {menuOpen && (
               <div
-                className="absolute right-0 top-full z-20 mt-1 min-w-[10rem] rounded-md border border-border bg-background py-1 shadow-md"
                 role="menu"
+                className="absolute right-0 top-full z-30 mt-1 min-w-[11rem] origin-top-right animate-scale-in overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface py-1 shadow-lg"
               >
+                {isOwner && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setEditing(true);
+                      setEditValue(content);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted"
+                  >
+                    <EditIcon size={17} /> Edit post
+                  </button>
+                )}
                 <button
                   type="button"
                   role="menuitem"
-                  className="flex w-full items-center px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-muted"
-                  onClick={openDeleteDialog}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setConfirmOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-danger transition-colors hover:bg-muted"
                 >
-                  Delete post
+                  <TrashIcon size={17} /> Delete post
                 </button>
               </div>
-            ) : null}
-            <dialog
-              ref={deleteDialogRef}
-              className="fixed left-1/2 top-1/2 z-[100] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-background p-5 shadow-lg backdrop:bg-black/50"
-              onClose={() => setDeleting(false)}
-            >
-              <h2 className="text-lg font-semibold text-foreground">
-                Delete post?
-              </h2>
-              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-                This can’t be undone. The post and its comments will be removed.
-              </p>
-              {deleteError ? (
-                <p className="mt-3 text-sm text-red-600 dark:text-red-400">
-                  {deleteError}
-                </p>
-              ) : null}
-              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={closeDeleteDialog}
-                  disabled={deleting}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
-                  loading={deleting}
-                  onClick={confirmDelete}
-                >
-                  Delete
-                </Button>
-              </div>
-            </dialog>
+            )}
           </div>
         )}
       </div>
 
-      {post.image_url && (
-        <Link href={`/post/${post.id}`} className="block bg-black">
-          <Image
-            src={post.image_url}
-            alt={post.content.slice(0, 80) || "Post image"}
-            width={630}
-            height={630}
-            className="aspect-square w-full object-cover"
-          />
-        </Link>
-      )}
-
-      <div className="space-y-2 px-0 py-3">
-        <Link href={`/post/${post.id}`} className="block text-sm">
-          <span className="font-semibold text-foreground">
-            {post.author.username}
-          </span>{" "}
-          <span className="whitespace-pre-wrap break-words text-foreground">
-            {post.content}
-          </span>
-        </Link>
-
-        {likesCount > 0 && (
-          <p className="text-sm font-semibold text-foreground">
-            {likesCount} {likesCount === 1 ? "like" : "likes"}
-          </p>
+      <div className="mt-2.5 pl-0 sm:pl-[3.25rem]">
+        {editing ? (
+          <div className="space-y-2.5">
+            <textarea
+              autoFocus
+              value={editValue}
+              maxLength={2000}
+              onChange={(e) => setEditValue(e.target.value)}
+              className="w-full resize-none rounded-[var(--radius-md)] border border-border bg-surface px-3.5 py-2.5 text-[15px] leading-relaxed text-foreground focus-visible:border-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-foreground/5"
+              rows={3}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setEditing(false)}
+                disabled={savingEdit}
+              >
+                Cancel
+              </Button>
+              <Button size="sm" loading={savingEdit} onClick={saveEdit}>
+                Save
+              </Button>
+            </div>
+          </div>
+        ) : (
+          content && (
+            <Link href={`/post/${post.id}`} className="block">
+              <RichText
+                text={content}
+                className="text-[15px] leading-relaxed"
+              />
+            </Link>
+          )
         )}
 
-        <div className="flex items-center gap-4 border-t border-border pt-3 mt-1">
+        {post.image_url && (
+          <div
+            className="relative mt-3 max-h-[640px] cursor-pointer overflow-hidden rounded-[var(--radius-md)] border border-border bg-muted"
+            onClick={handleImageTap}
+          >
+            <Image
+              src={post.image_url}
+              alt={content.slice(0, 80) || "Post image"}
+              width={1080}
+              height={1080}
+              className="h-auto w-full object-cover"
+            />
+            {burst && (
+              <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <span className="animate-heart-burst text-white drop-shadow-lg">
+                  <HeartIcon filled size={96} />
+                </span>
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="mt-3 flex items-center gap-1 text-muted-foreground">
           <button
             type="button"
             onClick={handleLike}
-            className={`rounded-md p-1 transition-opacity touch-manipulation hover:opacity-70 ${
-              liked ? "text-red-500" : "text-foreground"
-            }`}
             aria-label={liked ? "Unlike" : "Like"}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full py-1 pr-2.5 text-sm transition-colors",
+              liked ? "text-danger" : "hover:text-foreground"
+            )}
           >
-            <HeartIcon filled={liked} size={26} />
+            <span
+              className={cn(
+                "flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-muted",
+                likeAnim && "animate-like-pop"
+              )}
+            >
+              <HeartIcon filled={liked} size={22} />
+            </span>
+            {likesCount > 0 && (
+              <span className="tabular-nums font-medium">{likesCount}</span>
+            )}
           </button>
+
           <Link
             href={`/post/${post.id}`}
-            className="rounded-md p-1 text-foreground hover:opacity-70"
             aria-label="Comment"
+            className="flex items-center gap-1.5 rounded-full py-1 pr-2.5 text-sm transition-colors hover:text-foreground"
           >
-            <CommentIcon size={26} />
+            <span className="flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-muted">
+              <CommentIcon size={21} />
+            </span>
+            {post.comments_count > 0 && (
+              <span className="tabular-nums font-medium">
+                {post.comments_count}
+              </span>
+            )}
           </Link>
+
+          <IconButton
+            label="Share post"
+            size="md"
+            onClick={handleShare}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <ShareIcon size={20} />
+          </IconButton>
         </div>
-
-        {post.comments_count > 0 && (
-          <Link
-            href={`/post/${post.id}`}
-            className="block text-sm text-muted-foreground hover:text-foreground"
-          >
-            View all {post.comments_count} comments
-          </Link>
-        )}
       </div>
+
+      <Modal
+        open={confirmOpen}
+        onClose={() => !deleting && setConfirmOpen(false)}
+        title="Delete post?"
+        description="This can't be undone. The post and its comments will be permanently removed."
+      >
+        <div className="mt-5 flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => setConfirmOpen(false)}
+            disabled={deleting}
+          >
+            Cancel
+          </Button>
+          <Button variant="danger" loading={deleting} onClick={confirmDelete}>
+            Delete
+          </Button>
+        </div>
+      </Modal>
     </article>
-  );
-}
-
-function HeartIcon({
-  filled,
-  size,
-}: {
-  filled: boolean;
-  size: number;
-}) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill={filled ? "currentColor" : "none"}
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-    </svg>
-  );
-}
-
-function CommentIcon({ size }: { size: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
-
-function MoreHorizontalIcon() {
-  return (
-    <svg
-      width={20}
-      height={20}
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden
-    >
-      <circle cx="12" cy="12" r="1.5" />
-      <circle cx="6" cy="12" r="1.5" />
-      <circle cx="18" cy="12" r="1.5" />
-    </svg>
   );
 }

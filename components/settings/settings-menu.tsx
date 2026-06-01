@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { logout, sendPasswordResetEmail } from "@/lib/actions/auth";
+import { Modal } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
+import {
+  logout,
+  sendPasswordResetEmail,
+  deleteAccount,
+} from "@/lib/actions/auth";
+import { exportMyData } from "@/lib/actions/account";
 import { PreferenceToggle } from "@/components/settings/preference-toggle";
 import { createClient } from "@/lib/supabase/client";
 
@@ -32,10 +39,12 @@ function Section({
 }
 
 export function SettingsMenu() {
+  const { toast } = useToast();
   const [email, setEmail] = useState<string | null>(null);
-  const [pwMessage, setPwMessage] = useState<string | null>(null);
-  const [pwError, setPwError] = useState<string | null>(null);
   const [pwLoading, setPwLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -50,12 +59,43 @@ export function SettingsMenu() {
 
   async function handlePasswordReset() {
     setPwLoading(true);
-    setPwMessage(null);
-    setPwError(null);
     const result = await sendPasswordResetEmail();
-    if (result?.error) setPwError(result.error);
-    else setPwMessage("Check your email for a link to reset your password.");
     setPwLoading(false);
+    if (result?.error) toast(result.error, "error");
+    else toast("Check your email for a link to reset your password.", "success");
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    const result = await exportMyData();
+    setExporting(false);
+    if (result?.error || !result?.data) {
+      toast(result?.error ?? "Couldn't export your data", "error");
+      return;
+    }
+    const blob = new Blob([JSON.stringify(result.data, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mazi-data-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast("Your data is downloading", "success");
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    const result = await deleteAccount();
+    if (result?.error) {
+      setDeleting(false);
+      toast(result.error, "error");
+      return;
+    }
+    window.location.href = "/";
   }
 
   return (
@@ -110,14 +150,6 @@ export function SettingsMenu() {
           <p className="text-xs text-muted-foreground">
             We’ll email you a secure link to choose a new password.
           </p>
-          {pwError && (
-            <p className="text-sm text-red-600 dark:text-red-400">{pwError}</p>
-          )}
-          {pwMessage && (
-            <p className="text-sm text-green-700 dark:text-green-400">
-              {pwMessage}
-            </p>
-          )}
           <Button
             type="button"
             variant="outline"
@@ -210,10 +242,16 @@ export function SettingsMenu() {
               Download your data
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Request a copy of posts and profile data (coming soon).
+              Get a copy of your profile, posts, comments, and connections as
+              JSON.
             </p>
           </div>
-          <Button variant="outline" size="sm" disabled>
+          <Button
+            variant="outline"
+            size="sm"
+            loading={exporting}
+            onClick={handleExport}
+          >
             Request download
           </Button>
         </div>
@@ -226,29 +264,65 @@ export function SettingsMenu() {
               Permanently remove your account and content. Irreversible.
             </p>
           </div>
-          <Button variant="danger" size="sm" disabled title="Contact support">
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => setConfirmDelete(true)}
+          >
             Delete account
           </Button>
         </div>
       </Section>
 
-      <Section title="Help">
+      <Section
+        title="Legal"
+        description="The policies that govern your use of Mazi."
+      >
         <Link
-          href="/home"
+          href="/legal/privacy"
           className="block py-3 text-sm text-foreground hover:underline"
         >
-          Home feed
+          Privacy Policy
         </Link>
         <Link
-          href="/communities"
+          href="/legal/terms"
           className="block py-3 text-sm text-foreground hover:underline"
         >
-          Communities
+          Terms of Service
         </Link>
-        <p className="py-3 text-xs text-muted-foreground">
-          Help center and reporting tools can be linked here as the product grows.
-        </p>
+        <Link
+          href="/legal/guidelines"
+          className="block py-3 text-sm text-foreground hover:underline"
+        >
+          Community Guidelines
+        </Link>
+        <Link
+          href="/legal/cookies"
+          className="block py-3 text-sm text-foreground hover:underline"
+        >
+          Cookie Notice
+        </Link>
       </Section>
+
+      <Modal
+        open={confirmDelete}
+        onClose={() => !deleting && setConfirmDelete(false)}
+        title="Delete your account?"
+        description="This permanently removes your profile, posts, comments, likes, follows, and uploaded images. This cannot be undone."
+      >
+        <div className="mt-5 flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => setConfirmDelete(false)}
+            disabled={deleting}
+          >
+            Cancel
+          </Button>
+          <Button variant="danger" loading={deleting} onClick={handleDelete}>
+            Delete account
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
