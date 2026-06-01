@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { ensureProfileForAuthUser } from "@/lib/queries/profiles";
 import { updateProfileSchema } from "@/lib/validators/profile";
+import { validateImageUpload } from "@/lib/utils/image";
 import { revalidatePath } from "next/cache";
 
 export async function updateProfile(formData: FormData) {
@@ -59,12 +60,16 @@ export async function uploadAvatar(formData: FormData) {
   if (!file || file.size === 0) return { error: "No file provided" };
   if (file.size > 2 * 1024 * 1024) return { error: "File must be under 2MB" };
 
-  const ext = file.name.split(".").pop();
-  const path = `${user.id}/avatar.${ext}`;
+  const validated = validateImageUpload(file);
+  if (!validated.ok) return { error: validated.error };
+  const path = `${user.id}/avatar.${validated.value.ext}`;
 
   const { error: uploadError } = await supabase.storage
     .from("avatars")
-    .upload(path, file, { upsert: true });
+    .upload(path, file, {
+      upsert: true,
+      contentType: validated.value.contentType,
+    });
 
   if (uploadError) return { error: uploadError.message };
 

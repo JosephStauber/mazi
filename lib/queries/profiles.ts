@@ -11,7 +11,6 @@ function fallbackProfileFromAuthUser(user: User): Profile {
       (user.user_metadata?.username as string | undefined) ??
       user.email?.split("@")[0] ??
       "user",
-    email: user.email ?? null,
     bio: null,
     avatar_url: null,
     created_at: new Date().toISOString(),
@@ -91,7 +90,6 @@ export async function ensureProfileForAuthUser(
     const { error } = await supabase.from("profiles").insert({
       id: user.id,
       username,
-      email: user.email ?? null,
     });
     if (!error) return { ok: true };
     if (error.code !== "23505") {

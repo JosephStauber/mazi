@@ -275,36 +275,17 @@ export async function acceptInvite(inviteId: string) {
   const ensured = await ensureProfileForAuthUser(user);
   if (!ensured.ok) return { error: ensured.error };
 
-  const { data: invite } = await supabase
-    .from("community_invites")
-    .select("*")
-    .eq("id", inviteId)
-    .maybeSingle();
-
-  if (!invite || invite.status !== "pending")
-    return { error: "Invite not found or already used" };
-
-  if (invite.expires_at && new Date(invite.expires_at) < new Date())
-    return { error: "Invite has expired" };
-
-  await supabase
-    .from("community_invites")
-    .update({ status: "accepted", invitee_id: user.id })
-    .eq("id", inviteId);
-
-  const { error } = await supabase.from("community_members").insert({
-    community_id: invite.community_id,
-    user_id: user.id,
-    role: "member",
+  // Acceptance happens inside a SECURITY DEFINER RPC: it validates the
+  // invite (status/expiry/targeted-invitee), stamps the invitee, and inserts
+  // membership atomically — bypassing the locked-down invites RLS safely.
+  const { data: communityId, error } = await supabase.rpc("accept_invite", {
+    p_invite_id: inviteId,
   });
 
-  if (error) {
-    if (error.code === "23505") return { error: "Already a member" };
-    return { error: mapSupabaseUserMessage(error.message) };
-  }
+  if (error) return { error: mapSupabaseUserMessage(error.message) };
 
   revalidatePath("/communities");
-  return { success: true, communityId: invite.community_id };
+  return { success: true, communityId };
 }
 
 export async function declineInvite(inviteId: string) {
@@ -332,17 +313,29 @@ export async function resolveInviteToken(token: string) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated" };
 
-  const { data: invite } = await supabase
-    .from("community_invites")
-    .select("*, communities(id, name, slug, description)")
-    .eq("token", token)
-    .eq("status", "pending")
-    .maybeSingle();
+  // Invite rows are no longer world-readable; resolve the shareable link via a
+  // SECURITY DEFINER RPC that returns only the public-facing community fields
+  // (and only for pending, unexpired invites).
+  const { data: rows, error } = await supabase.rpc("get_invite_by_token", {
+    p_token: token,
+  });
 
-  if (!invite) return { error: "Invite not found or already used" };
+  if (error) return { error: mapSupabaseUserMessage(error.message) };
 
-  if (invite.expires_at && new Date(invite.expires_at) < new Date())
-    return { error: "Invite has expired" };
+  const row = Array.isArray(rows) ? rows[0] : rows;
+  if (!row) return { error: "Invite not found or already used" };
+
+  // Reshape the flat RPC columns into the nested shape the join page expects.
+  const invite = {
+    id: row.id as string,
+    community_id: row.community_id as string,
+    communities: {
+      id: row.community_id as string,
+      name: row.community_name as string,
+      slug: row.community_slug as string,
+      description: row.community_description as string | null,
+    },
+  };
 
   return { success: true, invite };
 }

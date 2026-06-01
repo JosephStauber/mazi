@@ -5,6 +5,7 @@ import { mapSupabaseUserMessage } from "@/lib/supabase/map-error";
 import { ensureProfileForAuthUser } from "@/lib/queries/profiles";
 import { notifyMentions } from "@/lib/actions/mentions";
 import { createPostSchema } from "@/lib/validators/post";
+import { validateImageUpload } from "@/lib/utils/image";
 import { revalidatePath } from "next/cache";
 
 export async function createPost(formData: FormData) {
@@ -32,11 +33,12 @@ export async function createPost(formData: FormData) {
   if (imageFile && imageFile.size > 0) {
     if (imageFile.size > 5 * 1024 * 1024)
       return { error: "Image must be under 5MB" };
-    const ext = imageFile.name.split(".").pop();
-    const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
+    const validated = validateImageUpload(imageFile);
+    if (!validated.ok) return { error: validated.error };
+    const path = `${user.id}/${crypto.randomUUID()}.${validated.value.ext}`;
     const { error: uploadError } = await supabase.storage
       .from("post-images")
-      .upload(path, imageFile);
+      .upload(path, imageFile, { contentType: validated.value.contentType });
     if (uploadError)
       return { error: mapSupabaseUserMessage(uploadError.message) };
     const {
