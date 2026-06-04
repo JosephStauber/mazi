@@ -67,6 +67,10 @@ export async function createPost(formData: FormData) {
   });
 
   revalidatePath("/home");
+  // The author's profile feed is a separate route; without this the Next.js
+  // router cache serves a stale profile and the new post shows up only after
+  // the cache expires.
+  revalidatePath("/profile/[username]", "page");
   if (parsed.data.community_id) {
     revalidatePath("/communities");
     const { data: comm } = await supabase
@@ -99,6 +103,7 @@ export async function editPost(postId: string, content: string) {
 
   revalidatePath("/home");
   revalidatePath(`/post/${postId}`);
+  revalidatePath("/profile/[username]", "page");
   return { success: true };
 }
 
@@ -114,6 +119,7 @@ export async function deletePost(postId: string) {
   if (error) return { error: mapSupabaseUserMessage(error.message) };
 
   revalidatePath("/home");
+  revalidatePath("/profile/[username]", "page");
   return { success: true };
 }
 

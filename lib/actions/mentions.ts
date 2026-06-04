@@ -19,26 +19,30 @@ export async function notifyMentions(
   supabase: SupabaseClient,
   { content, actorId, postId, commentId, excludeUserIds = [] }: NotifyMentionsOptions
 ): Promise<void> {
-  const usernames = extractMentions(content);
-  if (usernames.length === 0) return;
+  try {
+    const usernames = extractMentions(content);
+    if (usernames.length === 0) return;
 
-  const { data: users } = await supabase
-    .from("profiles")
-    .select("id")
-    .in("username", usernames);
-  if (!users?.length) return;
+    const { data: users } = await supabase
+      .from("profiles")
+      .select("id")
+      .in("username", usernames);
+    if (!users?.length) return;
 
-  const exclude = new Set([actorId, ...excludeUserIds]);
-  const rows = users
-    .filter((u) => !exclude.has(u.id))
-    .map((u) => ({
-      user_id: u.id,
-      actor_id: actorId,
-      type: "mention",
-      post_id: postId,
-      comment_id: commentId ?? null,
-    }));
-  if (rows.length === 0) return;
+    const exclude = new Set([actorId, ...excludeUserIds]);
+    const rows = users
+      .filter((u) => !exclude.has(u.id))
+      .map((u) => ({
+        user_id: u.id,
+        actor_id: actorId,
+        type: "mention",
+        post_id: postId,
+        comment_id: commentId ?? null,
+      }));
+    if (rows.length === 0) return;
 
-  await supabase.from("notifications").insert(rows);
+    await supabase.from("notifications").insert(rows);
+  } catch {
+    // Best-effort: never let mention notifications fail the parent post/comment.
+  }
 }

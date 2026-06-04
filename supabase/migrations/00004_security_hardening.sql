@@ -139,7 +139,10 @@ create policy "View public or member posts"
   on public.posts for select
   to authenticated
   using (
-    community_id is null
+    -- Authors always see their own posts, even after leaving the community
+    -- (otherwise their own content + permalinks 404 for them).
+    posts.author_id = auth.uid()
+    or community_id is null
     or exists (
       select 1 from public.communities c
       where c.id = posts.community_id
@@ -158,7 +161,9 @@ create policy "View comments on visible posts"
   on public.comments for select
   to authenticated
   using (
-    exists (
+    -- A comment's own author can always read it back.
+    comments.author_id = auth.uid()
+    or exists (
       select 1 from public.posts p
       where p.id = comments.post_id
         and (
@@ -183,7 +188,9 @@ create policy "View likes on visible posts"
   on public.likes for select
   to authenticated
   using (
-    exists (
+    -- A user can always read their own like rows.
+    likes.user_id = auth.uid()
+    or exists (
       select 1 from public.posts p
       where p.id = likes.post_id
         and (
@@ -217,8 +224,18 @@ create policy "Users can create notifications as themselves"
 
 -- ------------------------------------------------------------
 -- F7: Storage uploads could be written to any path. Require the
--- first path segment to be the uploader's own user id. (MIME
--- validation is enforced in the server actions.)
+-- first path segment to be the uploader's own user id.
+--
+-- The server action validates MIME, but the browser holds the anon
+-- key and can call the Storage REST API directly, bypassing it — so
+-- the real defense against SVG/HTML stored-XSS must live HERE, at the
+-- RLS boundary:
+--   * the filename extension must be a raster image (blocks .svg/.html),
+--   * and the declared mimetype, when present, must be an allowed image
+--     (so a .png can't be served as text/html or image/svg+xml).
+-- `storage.extension()` and the name are always available at check time;
+-- `metadata->>'mimetype'` is allowed to be null to avoid rejecting
+-- legitimate uploads on clients/versions that don't populate it yet.
 -- ------------------------------------------------------------
 drop policy if exists "Authenticated users can upload avatars" on storage.objects;
 create policy "Users can upload to own avatar folder"
@@ -227,6 +244,13 @@ create policy "Users can upload to own avatar folder"
   with check (
     bucket_id = 'avatars'
     and (storage.foldername(name))[1] = auth.uid()::text
+    and lower(storage.extension(name)) in ('jpg', 'jpeg', 'png', 'webp', 'gif')
+    and (
+      metadata->>'mimetype' is null
+      or lower(metadata->>'mimetype') in (
+        'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'
+      )
+    )
   );
 
 drop policy if exists "Authenticated users can upload post images" on storage.objects;
@@ -236,6 +260,13 @@ create policy "Users can upload to own post-image folder"
   with check (
     bucket_id = 'post-images'
     and (storage.foldername(name))[1] = auth.uid()::text
+    and lower(storage.extension(name)) in ('jpg', 'jpeg', 'png', 'webp', 'gif')
+    and (
+      metadata->>'mimetype' is null
+      or lower(metadata->>'mimetype') in (
+        'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'
+      )
+    )
   );
 
 -- ------------------------------------------------------------

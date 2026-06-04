@@ -32,7 +32,6 @@ export default async function ProtectedLayout({
         authUser.user_metadata?.username ??
         authUser.email?.split("@")[0] ??
         "user",
-      email: authUser.email ?? null,
       bio: null,
       avatar_url: null,
       created_at: new Date().toISOString(),
