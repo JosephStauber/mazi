@@ -10,7 +10,7 @@ import {
 import { Avatar } from "@/components/ui/avatar";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils/cn";
-import type { Profile } from "@/lib/types/database";
+import type { ProfileRef } from "@/lib/types/database";
 
 interface MentionTextareaProps {
   value: string;
@@ -38,12 +38,20 @@ export const MentionTextarea = forwardRef<
   const innerRef = useRef<HTMLTextAreaElement>(null);
   useImperativeHandle(forwardedRef, () => innerRef.current!, []);
 
-  const [results, setResults] = useState<Profile[]>([]);
+  const [results, setResults] = useState<ProfileRef[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const queryRef = useRef<{ start: number; end: number } | null>(null);
   const reqId = useRef(0);
   const pendingCaret = useRef<number | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function clearDebounce() {
+    if (debounceRef.current != null) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+  }
 
   // Restore caret after a programmatic value change (mention insertion).
   useEffect(() => {
@@ -54,21 +62,31 @@ export const MentionTextarea = forwardRef<
     }
   }, [value]);
 
+  // Cancel any pending profile query when the field unmounts.
+  useEffect(() => clearDebounce, []);
+
   function detectMention(text: string, caret: number) {
     const before = text.slice(0, caret);
     const m = before.match(ACTIVE);
     if (!m) {
       queryRef.current = null;
+      clearDebounce();
       setOpen(false);
       return;
     }
     const query = m[1];
     queryRef.current = { start: caret - query.length - 1, end: caret };
 
+    // Only one query in flight: cancel the previous keystroke's pending timer so
+    // fast typing dispatches a single search, not one per character.
+    clearDebounce();
     const id = ++reqId.current;
-    const timer = setTimeout(async () => {
+    debounceRef.current = setTimeout(async () => {
       const supabase = createClient();
-      let q = supabase.from("profiles").select("*").limit(6);
+      let q = supabase
+        .from("profiles")
+        .select("id, username, avatar_url")
+        .limit(6);
       q = query ? q.ilike("username", `${query}%`) : q.order("username");
       const { data } = await q;
       if (id !== reqId.current) return;
@@ -76,7 +94,6 @@ export const MentionTextarea = forwardRef<
       setActive(0);
       setOpen((data ?? []).length > 0);
     }, 140);
-    return () => clearTimeout(timer);
   }
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -85,7 +102,7 @@ export const MentionTextarea = forwardRef<
     detectMention(next, e.target.selectionStart ?? next.length);
   }
 
-  function select(user: Profile) {
+  function select(user: ProfileRef) {
     const range = queryRef.current;
     if (!range) return;
     const before = value.slice(0, range.start);

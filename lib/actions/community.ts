@@ -295,10 +295,12 @@ export async function declineInvite(inviteId: string) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated" };
 
-  const { error } = await supabase
-    .from("community_invites")
-    .update({ status: "declined" })
-    .eq("id", inviteId);
+  // Direct UPDATEs on community_invites are no longer permitted (00006):
+  // an invitee could otherwise rewrite the community/token/status before
+  // accepting. Decline the invite through a narrow SECURITY DEFINER RPC.
+  const { error } = await supabase.rpc("decline_invite", {
+    p_invite_id: inviteId,
+  });
 
   if (error) return { error: mapSupabaseUserMessage(error.message) };
 

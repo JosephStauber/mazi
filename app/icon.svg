@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Mazi</title>
+  <rect width="64" height="64" fill="#050504"/>
+  <rect width="64" height="64" rx="10" fill="#faf6ef"/>
+  <text x="5" y="47" fill="#161310" font-family="Georgia, 'Times New Roman', serif" font-size="52" font-weight="700" letter-spacing="-7">m</text>
+  <circle cx="55" cy="45" r="4.8" fill="#e8552d"/>
+</svg>

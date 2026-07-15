@@ -1,8 +1,12 @@
+import { cache } from "react";
 import type { User } from "@supabase/supabase-js";
 import { nanoid } from "nanoid";
 import { createClient } from "@/lib/supabase/server";
 import { mapSupabaseUserMessage } from "@/lib/supabase/map-error";
-import type { Profile } from "@/lib/types/database";
+import type { Page, Profile, ProfileListItem } from "@/lib/types/database";
+import { decodeCursor, keysetFilter, pageFromRows } from "@/lib/utils/cursor";
+
+export const FOLLOWS_PAGE_SIZE = 20;
 
 function fallbackProfileFromAuthUser(user: User): Profile {
   return {
@@ -44,13 +48,29 @@ export async function getProfileById(id: string): Promise<Profile | null> {
   return data;
 }
 
-export async function getCurrentUser(): Promise<Profile | null> {
+/**
+ * The authenticated auth user, request-memoized so the protected layout and the
+ * page it wraps share a single `getUser()` round trip. Per-request only (React
+ * `cache`) — never a cross-request cache of session/RLS-bound data.
+ */
+export const getAuthUser = cache(async (): Promise<User | null> => {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  return user;
+});
+
+/**
+ * The current user's profile. Request-memoized: the layout and every page in
+ * the same render read it once. Built on the memoized `getAuthUser`, so it adds
+ * at most one `profiles` query per request.
+ */
+export const getCurrentUser = cache(async (): Promise<Profile | null> => {
+  const user = await getAuthUser();
   if (!user) return null;
 
+  const supabase = await createClient();
   const { data: profile } = await supabase
     .from("profiles")
     .select("*")
@@ -58,7 +78,7 @@ export async function getCurrentUser(): Promise<Profile | null> {
     .maybeSingle();
 
   return profile ?? fallbackProfileFromAuthUser(user);
-}
+});
 
 /** Insert public.profiles row if missing (e.g. trigger never ran). Required for FKs like communities.creator_id. */
 export async function ensureProfileForAuthUser(
@@ -85,8 +105,11 @@ export async function ensureProfileForAuthUser(
   base = base.slice(0, 30);
 
   for (let attempt = 0; attempt < 10; attempt++) {
+    // nanoid's default alphabet includes '-', which the DB CHECK
+    // profiles_username_format (00008) rejects; keep the fallback within
+    // [a-zA-Z0-9_] so this collision path can't fail the constraint.
     const username =
-      attempt === 0 ? base : `u_${nanoid(10)}`.slice(0, 30);
+      attempt === 0 ? base : `u_${nanoid(10).replace(/-/g, "_")}`.slice(0, 30);
     const { error } = await supabase.from("profiles").insert({
       id: user.id,
       username,
@@ -136,35 +159,94 @@ export async function isFollowing(
   return !!data;
 }
 
-export async function getFollowers(userId: string): Promise<Profile[]> {
+// Follower/following lists are keyset-paginated on the join row's
+// `(created_at, id)` (newest first). We select those ordering columns
+// alongside the joined profile so the cursor keys on the follow, not the user.
+
+export async function getFollowers(
+  userId: string,
+  cursor?: string | null
+): Promise<Page<ProfileListItem>> {
   const supabase = await createClient();
-  const { data } = await supabase
+  let query = supabase
     .from("follows")
-    .select("follower:profiles!follower_id(*)")
+    .select(
+      "id, created_at, follower:profiles!follower_id(id, username, avatar_url, bio)"
+    )
     .eq("following_id", userId)
-    .order("created_at", { ascending: false });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((r: any) => r.follower).filter(Boolean) as Profile[];
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(FOLLOWS_PAGE_SIZE + 1);
+
+  const decoded = decodeCursor(cursor);
+  if (decoded) query = query.or(keysetFilter(decoded, "desc"));
+
+  const { data } = await query;
+  if (!data) return { items: [], nextCursor: null };
+
+  const { pageRows, nextCursor } = pageFromRows(
+    data,
+    FOLLOWS_PAGE_SIZE,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (r: any) => ({ created_at: r.created_at, id: r.id })
+  );
+  const items = pageRows
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((r: any) => r.follower)
+    .filter(Boolean) as ProfileListItem[];
+  return { items, nextCursor };
 }
 
-export async function getFollowingProfiles(userId: string): Promise<Profile[]> {
+export async function getFollowingProfiles(
+  userId: string,
+  cursor?: string | null
+): Promise<Page<ProfileListItem>> {
   const supabase = await createClient();
-  const { data } = await supabase
+  let query = supabase
     .from("follows")
-    .select("following:profiles!following_id(*)")
+    .select(
+      "id, created_at, following:profiles!following_id(id, username, avatar_url, bio)"
+    )
     .eq("follower_id", userId)
-    .order("created_at", { ascending: false });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((r: any) => r.following).filter(Boolean) as Profile[];
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(FOLLOWS_PAGE_SIZE + 1);
+
+  const decoded = decodeCursor(cursor);
+  if (decoded) query = query.or(keysetFilter(decoded, "desc"));
+
+  const { data } = await query;
+  if (!data) return { items: [], nextCursor: null };
+
+  const { pageRows, nextCursor } = pageFromRows(
+    data,
+    FOLLOWS_PAGE_SIZE,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (r: any) => ({ created_at: r.created_at, id: r.id })
+  );
+  const items = pageRows
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((r: any) => r.following)
+    .filter(Boolean) as ProfileListItem[];
+  return { items, nextCursor };
 }
 
-/** Set of user IDs the given user currently follows (for follow-state in lists). */
-export async function getFollowingIdSet(userId: string): Promise<Set<string>> {
+/**
+ * Which of `ids` the given user follows. Bounded by the page being rendered
+ * (an `IN` over the visible profiles), so follow-state no longer requires
+ * loading the caller's entire follow set.
+ */
+export async function getFollowedSubset(
+  userId: string,
+  ids: string[]
+): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
   const supabase = await createClient();
   const { data } = await supabase
     .from("follows")
     .select("following_id")
-    .eq("follower_id", userId);
+    .eq("follower_id", userId)
+    .in("following_id", ids);
   return new Set((data ?? []).map((r) => r.following_id));
 }
 

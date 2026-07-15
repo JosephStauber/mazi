@@ -2,27 +2,31 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { getFollowingFeed, getCommunitiesFeed } from "@/lib/queries/feed";
-import type { PostWithAuthor } from "@/lib/types/database";
+import type { Page, PostWithAuthor } from "@/lib/types/database";
+
+const EMPTY: Page<PostWithAuthor> = { items: [], nextCursor: null };
 
 export async function loadMoreFollowing(
   cursor: string
-): Promise<PostWithAuthor[]> {
+): Promise<Page<PostWithAuthor>> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return [];
+  if (!user) return EMPTY;
   return getFollowingFeed(user.id, cursor);
 }
 
+// `communityId` is first so the communities page can `.bind(null, filterId)` it
+// and hand `InfiniteFeed` a plain `(cursor) => Page` loader.
 export async function loadMoreCommunities(
-  cursor: string,
-  communityId?: string | null
-): Promise<PostWithAuthor[]> {
+  communityId: string | null,
+  cursor: string
+): Promise<Page<PostWithAuthor>> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return [];
-  return getCommunitiesFeed(user.id, communityId ?? null, cursor);
+  if (!user) return EMPTY;
+  return getCommunitiesFeed(user.id, communityId, cursor);
 }

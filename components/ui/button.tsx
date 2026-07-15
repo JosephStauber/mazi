@@ -28,6 +28,32 @@ const sizeStyles: Record<Size, string> = {
   lg: "h-12 px-6 text-base gap-2 rounded-[var(--radius-md)]",
 };
 
+/**
+ * Shared button styling so a link that should look like a button can be a single
+ * interactive `<a>` (no invalid `<a><button>` nesting).
+ */
+export function buttonClassName({
+  variant = "default",
+  size = "md",
+  fullWidth = false,
+  className,
+}: {
+  variant?: Variant;
+  size?: Size;
+  fullWidth?: boolean;
+  className?: string;
+} = {}) {
+  return cn(
+    "relative inline-flex items-center justify-center font-medium transition-all duration-150 ease-spring select-none touch-manipulation",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+    "active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50",
+    variantStyles[variant],
+    sizeStyles[size],
+    fullWidth && "w-full",
+    className
+  );
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
     {
@@ -47,15 +73,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         disabled={disabled || loading}
-        className={cn(
-          "relative inline-flex items-center justify-center font-medium transition-all duration-150 ease-spring select-none touch-manipulation",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-          "active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50",
-          variantStyles[variant],
-          sizeStyles[size],
-          fullWidth && "w-full",
-          className
-        )}
+        className={buttonClassName({ variant, size, fullWidth, className })}
         {...props}
       >
         {loading && (

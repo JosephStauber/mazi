@@ -3,7 +3,7 @@ import type {
   Community,
   Notification,
   NotificationWithActor,
-  Profile,
+  ProfileRef,
 } from "@/lib/types/database";
 
 export async function getNotifications(
@@ -37,8 +37,11 @@ export async function getNotifications(
 
   const [actorsRes, communitiesRes] = await Promise.all([
     actorIds.length > 0
-      ? supabase.from("profiles").select("*").in("id", actorIds)
-      : Promise.resolve({ data: [] as Profile[] }),
+      ? supabase
+          .from("profiles")
+          .select("id, username, avatar_url")
+          .in("id", actorIds)
+      : Promise.resolve({ data: [] as ProfileRef[] }),
     communityIds.length > 0
       ? supabase
           .from("communities")

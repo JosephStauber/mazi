@@ -35,18 +35,30 @@ export function CreateCommunityForm() {
         description="Start a space for people to gather around a shared interest."
       >
         <form action={handleSubmit} className="mt-4 space-y-3">
-          <Input name="name" placeholder="Community name" maxLength={50} required autoFocus />
+          <Input
+            name="name"
+            aria-label="Community name"
+            placeholder="Community name"
+            maxLength={50}
+            required
+            autoFocus
+          />
           <Textarea
             name="description"
+            aria-label="Community description"
             placeholder="What's this community about?"
             maxLength={300}
             rows={3}
           />
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+            <label
+              htmlFor="privacy_type"
+              className="mb-1.5 block text-xs font-medium text-muted-foreground"
+            >
               Privacy
             </label>
             <select
+              id="privacy_type"
               name="privacy_type"
               defaultValue="public"
               className="h-10 w-full rounded-[var(--radius-md)] border border-border bg-background px-3 text-sm text-foreground focus:border-foreground focus:outline-none focus:ring-4 focus:ring-foreground/5"

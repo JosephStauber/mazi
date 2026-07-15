@@ -141,7 +141,11 @@ export async function toggleLike(postId: string) {
     .single();
 
   if (existing) {
-    await supabase.from("likes").delete().eq("id", existing.id);
+    const { error } = await supabase
+      .from("likes")
+      .delete()
+      .eq("id", existing.id);
+    if (error) return { error: mapSupabaseUserMessage(error.message) };
   } else {
     const { error } = await supabase
       .from("likes")

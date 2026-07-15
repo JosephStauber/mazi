@@ -43,60 +43,66 @@ export async function createComment(formData: FormData) {
   const { data: comment, error } = await supabase
     .from("comments")
     .insert(insert)
-    .select("id")
+    .select("id, created_at")
     .single();
 
   if (error) return { error: error.message };
 
+  // The post author and (for replies) the parent-comment author are independent
+  // reads — fetch them together instead of serially.
+  const [{ data: post }, { data: parent }] = await Promise.all([
+    supabase
+      .from("posts")
+      .select("author_id")
+      .eq("id", parsed.data.post_id)
+      .single(),
+    parsed.data.parent_id
+      ? supabase
+          .from("comments")
+          .select("author_id")
+          .eq("id", parsed.data.parent_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
   // People already notified for this comment, so mentions don't double up.
   const notified = new Set<string>([user.id]);
-
-  const { data: post } = await supabase
-    .from("posts")
-    .select("author_id")
-    .eq("id", parsed.data.post_id)
-    .single();
-
+  const recipients: string[] = [];
   if (post && post.author_id !== user.id) {
     notified.add(post.author_id);
-    await supabase.from("notifications").insert({
-      user_id: post.author_id,
-      actor_id: user.id,
-      type: "comment",
-      post_id: parsed.data.post_id,
-      comment_id: comment.id,
-    });
+    recipients.push(post.author_id);
+  }
+  // Notify the author of the comment being replied to (unless already notified).
+  if (parent && !notified.has(parent.author_id)) {
+    notified.add(parent.author_id);
+    recipients.push(parent.author_id);
   }
 
-  // Notify the author of the comment being replied to.
-  if (parsed.data.parent_id) {
-    const { data: parent } = await supabase
-      .from("comments")
-      .select("author_id")
-      .eq("id", parsed.data.parent_id)
-      .maybeSingle();
-    if (parent && !notified.has(parent.author_id)) {
-      notified.add(parent.author_id);
-      await supabase.from("notifications").insert({
-        user_id: parent.author_id,
+  // Notification inserts stay best-effort (RLS-gated, errors swallowed) and now
+  // run alongside the mention fan-out instead of one after another.
+  await Promise.all([
+    ...recipients.map((recipientId) =>
+      supabase.from("notifications").insert({
+        user_id: recipientId,
         actor_id: user.id,
         type: "comment",
         post_id: parsed.data.post_id,
         comment_id: comment.id,
-      });
-    }
-  }
-
-  await notifyMentions(supabase, {
-    content: parsed.data.content,
-    actorId: user.id,
-    postId: parsed.data.post_id,
-    commentId: comment.id,
-    excludeUserIds: [...notified],
-  });
+      })
+    ),
+    notifyMentions(supabase, {
+      content: parsed.data.content,
+      actorId: user.id,
+      postId: parsed.data.post_id,
+      commentId: comment.id,
+      excludeUserIds: [...notified],
+    }),
+  ]);
 
   revalidatePath(`/post/${parsed.data.post_id}`);
-  return { success: true };
+  // Return the persisted row so optimistic UI can swap its temporary item for a
+  // real, editable/deletable/replyable comment without a full reload.
+  return { success: true, comment };
 }
 
 export async function editComment(commentId: string, content: string) {

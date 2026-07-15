@@ -28,18 +28,26 @@ export function SearchView() {
   const reqId = useRef(0);
 
   useEffect(() => {
+    const id = ++reqId.current;
     const safe = sanitizeSearchTerm(query);
+
+    // State updates run inside the timers, not synchronously in the effect body
+    // (avoids react-hooks/set-state-in-effect). Clear near-instantly; debounce
+    // the network search.
     if (safe.length < 2) {
-      setUsers([]);
-      setCommunities([]);
-      setSearched(false);
-      setLoading(false);
-      return;
+      const clear = setTimeout(() => {
+        if (id !== reqId.current) return;
+        setUsers([]);
+        setCommunities([]);
+        setSearched(false);
+        setLoading(false);
+      }, 0);
+      return () => clearTimeout(clear);
     }
 
-    setLoading(true);
-    const id = ++reqId.current;
     const timer = setTimeout(async () => {
+      if (id !== reqId.current) return;
+      setLoading(true);
       const supabase = createClient();
       const pattern = `%${safe}%`;
       const [usersRes, communitiesRes] = await Promise.all([

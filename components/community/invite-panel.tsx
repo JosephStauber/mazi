@@ -61,6 +61,7 @@ export function InvitePanel({ communityId }: InvitePanelProps) {
       <div className="mt-3 flex gap-2">
         <Input
           placeholder="Username"
+          aria-label="Username to invite"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleInviteByUsername()}

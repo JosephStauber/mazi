@@ -1,12 +1,18 @@
 import { createClient } from "@/lib/supabase/server";
-import type { PostWithAuthor } from "@/lib/types/database";
+import type { Page, PostWithAuthor } from "@/lib/types/database";
+import { decodeCursor, keysetFilter, pageFromRows } from "@/lib/utils/cursor";
 
 export const FEED_PAGE_SIZE = 15;
+
+const POST_SELECT = `*, author:profiles!author_id(id, username, avatar_url), community:communities!community_id(id, name, slug), likes(count), comments(count)`;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const postKey = (p: any) => ({ created_at: p.created_at, id: p.id });
 
 export async function getFollowingFeed(
   userId: string,
   cursor?: string | null
-): Promise<PostWithAuthor[]> {
+): Promise<Page<PostWithAuthor>> {
   const supabase = await createClient();
 
   const { data: followsData } = await supabase
@@ -15,35 +21,42 @@ export async function getFollowingFeed(
     .eq("follower_id", userId);
 
   const followingIds = (followsData ?? []).map((f) => f.following_id);
-  if (followingIds.length === 0) return [];
+  if (followingIds.length === 0) return { items: [], nextCursor: null };
 
   let query = supabase
     .from("posts")
-    .select(
-      `*, author:profiles!author_id(*), community:communities!community_id(id, name, slug)`
-    )
+    .select(POST_SELECT)
     .in("author_id", followingIds)
     .is("community_id", null)
     .order("created_at", { ascending: false })
-    .limit(FEED_PAGE_SIZE);
+    .order("id", { ascending: false })
+    .limit(FEED_PAGE_SIZE + 1);
 
-  if (cursor) query = query.lt("created_at", cursor);
+  const decoded = decodeCursor(cursor);
+  if (decoded) query = query.or(keysetFilter(decoded, "desc"));
 
-  const { data: posts } = await query;
-  if (!posts) return [];
+  const { data: rows } = await query;
+  if (!rows) return { items: [], nextCursor: null };
 
-  return await enrichPosts(supabase, posts, userId);
+  const { pageRows, nextCursor } = pageFromRows(rows, FEED_PAGE_SIZE, postKey);
+  const items = await enrichPosts(supabase, pageRows, userId);
+  return { items, nextCursor };
 }
 
 /**
  * Posts in communities the user belongs to.
- * @param filterCommunityId When set, only that community (must be a membership); otherwise all member communities.
+ * @param filterCommunityId When set, only that community (membership is verified);
+ *   otherwise all member communities.
+ * @param memberIds Pre-fetched member community ids for the unfiltered feed — pass
+ *   these when the caller already read them (e.g. the communities page just called
+ *   `getCommunities`) to avoid a second `community_members` read on the same request.
  */
 export async function getCommunitiesFeed(
   userId: string,
   filterCommunityId?: string | null,
-  cursor?: string | null
-): Promise<PostWithAuthor[]> {
+  cursor?: string | null,
+  memberIds?: string[]
+): Promise<Page<PostWithAuthor>> {
   const supabase = await createClient();
 
   let communityIds: string[];
@@ -56,8 +69,10 @@ export async function getCommunitiesFeed(
       .eq("community_id", filterCommunityId)
       .maybeSingle();
 
-    if (!membership) return [];
+    if (!membership) return { items: [], nextCursor: null };
     communityIds = [filterCommunityId];
+  } else if (memberIds) {
+    communityIds = memberIds;
   } else {
     const { data: memberships } = await supabase
       .from("community_members")
@@ -67,26 +82,33 @@ export async function getCommunitiesFeed(
     communityIds = (memberships ?? []).map((m) => m.community_id);
   }
 
-  if (communityIds.length === 0) return [];
+  if (communityIds.length === 0) return { items: [], nextCursor: null };
 
   let query = supabase
     .from("posts")
-    .select(
-      `*, author:profiles!author_id(*), community:communities!community_id(id, name, slug)`
-    )
+    .select(POST_SELECT)
     .in("community_id", communityIds)
     .order("created_at", { ascending: false })
-    .limit(FEED_PAGE_SIZE);
+    .order("id", { ascending: false })
+    .limit(FEED_PAGE_SIZE + 1);
 
-  if (cursor) query = query.lt("created_at", cursor);
+  const decoded = decodeCursor(cursor);
+  if (decoded) query = query.or(keysetFilter(decoded, "desc"));
 
-  const { data: posts } = await query;
-  if (!posts) return [];
+  const { data: rows } = await query;
+  if (!rows) return { items: [], nextCursor: null };
 
-  return await enrichPosts(supabase, posts, userId);
+  const { pageRows, nextCursor } = pageFromRows(rows, FEED_PAGE_SIZE, postKey);
+  const items = await enrichPosts(supabase, pageRows, userId);
+  return { items, nextCursor };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+/**
+ * Attach engagement metadata to raw post rows. Total like/comment counts are
+ * computed in the database via embedded aggregates — callers must include
+ * `likes(count), comments(count)` in their select — so we only need one extra
+ * query here for the caller's own likes (to set `liked_by_user`).
+ */
 export async function enrichPosts(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
@@ -98,35 +120,24 @@ export async function enrichPosts(
 
   const postIds = posts.map((p) => p.id);
 
-  const [{ data: likesData }, { data: commentsData }, { data: userLikes }] =
-    await Promise.all([
-      supabase.from("likes").select("post_id").in("post_id", postIds),
-      supabase.from("comments").select("post_id").in("post_id", postIds),
-      supabase
-        .from("likes")
-        .select("post_id")
-        .in("post_id", postIds)
-        .eq("user_id", currentUserId),
-    ]);
+  const { data: userLikes } = await supabase
+    .from("likes")
+    .select("post_id")
+    .in("post_id", postIds)
+    .eq("user_id", currentUserId);
 
-  const likesMap: Record<string, number> = {};
-  const commentsMap: Record<string, number> = {};
   const userLikesSet = new Set<string>();
-
-  (likesData ?? []).forEach((l: { post_id: string }) => {
-    likesMap[l.post_id] = (likesMap[l.post_id] || 0) + 1;
-  });
-  (commentsData ?? []).forEach((c: { post_id: string }) => {
-    commentsMap[c.post_id] = (commentsMap[c.post_id] || 0) + 1;
-  });
   (userLikes ?? []).forEach((l: { post_id: string }) => {
     userLikesSet.add(l.post_id);
   });
 
-  return posts.map((post) => ({
+  // Embedded aggregates arrive as `likes: [{ count: n }]`; strip them from the
+  // returned object and surface flat counts instead.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return posts.map(({ likes, comments, ...post }: any) => ({
     ...post,
-    likes_count: likesMap[post.id] || 0,
-    comments_count: commentsMap[post.id] || 0,
+    likes_count: Array.isArray(likes) ? likes[0]?.count ?? 0 : 0,
+    comments_count: Array.isArray(comments) ? comments[0]?.count ?? 0 : 0,
     liked_by_user: userLikesSet.has(post.id),
   }));
 }

@@ -1,40 +1,41 @@
 import { createClient } from "@/lib/supabase/server";
+import { enrichPosts } from "@/lib/queries/feed";
 import type {
+  Page,
   CommunityWithMeta,
   CommunityMemberWithProfile,
   PostWithAuthor,
 } from "@/lib/types/database";
+import { decodeCursor, keysetFilter, pageFromRows } from "@/lib/utils/cursor";
+
+export const COMMUNITY_POSTS_PAGE_SIZE = 15;
+export const COMMUNITY_MEMBERS_PAGE_SIZE = 30;
+
+const POST_SELECT = `*, author:profiles!author_id(id, username, avatar_url), community:communities!community_id(id, name, slug), likes(count), comments(count)`;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const rowKey = (r: any) => ({ created_at: r.created_at, id: r.id });
 
 export async function getCommunities(
   userId: string
 ): Promise<CommunityWithMeta[]> {
   const supabase = await createClient();
 
+  // Member counts come from an embedded aggregate (community_members SELECT is
+  // world-readable to authenticated users), so we never transfer member rows
+  // just to count them. Only the caller's own memberships are read, for
+  // is_member / role.
   const { data: communities } = await supabase
     .from("communities")
-    .select("*")
+    .select("*, community_members(count)")
     .order("created_at", { ascending: false });
 
   if (!communities) return [];
 
-  const communityIds = communities.map((c) => c.id);
-
-  const [{ data: membersData }, { data: userMemberships }] = await Promise.all([
-    supabase
-      .from("community_members")
-      .select("community_id")
-      .in("community_id", communityIds),
-    supabase
-      .from("community_members")
-      .select("community_id, role")
-      .in("community_id", communityIds)
-      .eq("user_id", userId),
-  ]);
-
-  const countMap: Record<string, number> = {};
-  (membersData ?? []).forEach((m: { community_id: string }) => {
-    countMap[m.community_id] = (countMap[m.community_id] || 0) + 1;
-  });
+  const { data: userMemberships } = await supabase
+    .from("community_members")
+    .select("community_id, role")
+    .eq("user_id", userId);
 
   const memberMap: Record<string, string> = {};
   (userMemberships ?? []).forEach(
@@ -43,9 +44,12 @@ export async function getCommunities(
     }
   );
 
-  return communities.map((c) => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return communities.map(({ community_members, ...c }: any) => ({
     ...c,
-    members_count: countMap[c.id] || 0,
+    members_count: Array.isArray(community_members)
+      ? community_members[0]?.count ?? 0
+      : 0,
     is_member: !!memberMap[c.id],
     role: (memberMap[c.id] as CommunityWithMeta["role"]) ?? null,
   }));
@@ -87,67 +91,59 @@ export async function getCommunityBySlug(
 }
 
 export async function getCommunityMembers(
-  communityId: string
-): Promise<CommunityMemberWithProfile[]> {
+  communityId: string,
+  cursor?: string | null
+): Promise<Page<CommunityMemberWithProfile>> {
   const supabase = await createClient();
 
-  const { data } = await supabase
+  let query = supabase
     .from("community_members")
-    .select(`*, profile:profiles!user_id(*)`)
+    .select(`*, profile:profiles!user_id(id, username, avatar_url)`)
     .eq("community_id", communityId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(COMMUNITY_MEMBERS_PAGE_SIZE + 1);
 
-  return (data as CommunityMemberWithProfile[]) ?? [];
+  const decoded = decodeCursor(cursor);
+  if (decoded) query = query.or(keysetFilter(decoded, "asc"));
+
+  const { data } = await query;
+  if (!data) return { items: [], nextCursor: null };
+
+  const { pageRows, nextCursor } = pageFromRows(
+    data,
+    COMMUNITY_MEMBERS_PAGE_SIZE,
+    rowKey
+  );
+  return { items: pageRows as CommunityMemberWithProfile[], nextCursor };
 }
 
 export async function getCommunityPosts(
   communityId: string,
-  currentUserId: string
-): Promise<PostWithAuthor[]> {
+  currentUserId: string,
+  cursor?: string | null
+): Promise<Page<PostWithAuthor>> {
   const supabase = await createClient();
 
-  const { data: posts } = await supabase
+  let query = supabase
     .from("posts")
-    .select(
-      `*, author:profiles!author_id(*), community:communities!community_id(id, name, slug)`
-    )
+    .select(POST_SELECT)
     .eq("community_id", communityId)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(COMMUNITY_POSTS_PAGE_SIZE + 1);
 
-  if (!posts) return [];
+  const decoded = decodeCursor(cursor);
+  if (decoded) query = query.or(keysetFilter(decoded, "desc"));
 
-  const postIds = posts.map((p) => p.id);
-  if (postIds.length === 0) return posts as PostWithAuthor[];
+  const { data: rows } = await query;
+  if (!rows) return { items: [], nextCursor: null };
 
-  const [{ data: likesData }, { data: commentsData }, { data: userLikes }] =
-    await Promise.all([
-      supabase.from("likes").select("post_id").in("post_id", postIds),
-      supabase.from("comments").select("post_id").in("post_id", postIds),
-      supabase
-        .from("likes")
-        .select("post_id")
-        .in("post_id", postIds)
-        .eq("user_id", currentUserId),
-    ]);
-
-  const likesMap: Record<string, number> = {};
-  const commentsMap: Record<string, number> = {};
-  const userLikesSet = new Set<string>();
-
-  (likesData ?? []).forEach((l: { post_id: string }) => {
-    likesMap[l.post_id] = (likesMap[l.post_id] || 0) + 1;
-  });
-  (commentsData ?? []).forEach((c: { post_id: string }) => {
-    commentsMap[c.post_id] = (commentsMap[c.post_id] || 0) + 1;
-  });
-  (userLikes ?? []).forEach((l: { post_id: string }) => {
-    userLikesSet.add(l.post_id);
-  });
-
-  return posts.map((post) => ({
-    ...post,
-    likes_count: likesMap[post.id] || 0,
-    comments_count: commentsMap[post.id] || 0,
-    liked_by_user: userLikesSet.has(post.id),
-  })) as PostWithAuthor[];
+  const { pageRows, nextCursor } = pageFromRows(
+    rows,
+    COMMUNITY_POSTS_PAGE_SIZE,
+    rowKey
+  );
+  const items = await enrichPosts(supabase, pageRows, currentUserId);
+  return { items, nextCursor };
 }

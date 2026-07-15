@@ -5,6 +5,10 @@ import {
   getCommunityMembers,
   getCommunityPosts,
 } from "@/lib/queries/communities";
+import {
+  loadMoreCommunityPosts,
+  loadMoreCommunityMembers,
+} from "@/lib/actions/pagination";
 import { PostComposer } from "@/components/post/post-composer";
 import { JoinLeaveButton } from "@/components/community/join-leave-button";
 import { InvitePanel } from "@/components/community/invite-panel";
@@ -25,7 +29,7 @@ export default async function CommunityPage({
   const community = await getCommunityBySlug(slug, currentUser.id);
   if (!community) notFound();
 
-  const [members, posts] = await Promise.all([
+  const [membersPage, postsPage] = await Promise.all([
     getCommunityMembers(community.id),
     getCommunityPosts(community.id, currentUser.id),
   ]);
@@ -110,8 +114,13 @@ export default async function CommunityPage({
 
       <div className="mt-6">
         <CommunityTabs
-          posts={posts}
-          members={members}
+          initialPosts={postsPage.items}
+          postsCursor={postsPage.nextCursor}
+          loadMorePosts={loadMoreCommunityPosts.bind(null, community.id)}
+          initialMembers={membersPage.items}
+          membersCursor={membersPage.nextCursor}
+          membersCount={community.members_count}
+          loadMoreMembers={loadMoreCommunityMembers.bind(null, community.id)}
           currentUserId={currentUser.id}
           canModerate={canModerate}
         />

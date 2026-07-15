@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 interface PreferenceToggleProps {
   storageKey: string;
@@ -9,29 +9,39 @@ interface PreferenceToggleProps {
   defaultOn?: boolean;
 }
 
+// Reading localStorage is the external source; useSyncExternalStore keeps the
+// initial value out of an effect (avoids react-hooks/set-state-in-effect) and
+// safe across SSR hydration.
+const noopSubscribe = () => () => {};
+
 export function PreferenceToggle({
   storageKey,
   label,
   description,
   defaultOn = true,
 }: PreferenceToggleProps) {
-  const [on, setOn] = useState(defaultOn);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem(storageKey);
-      if (v !== null) setOn(v === "1");
-      else setOn(defaultOn);
-    } catch {
-      setOn(defaultOn);
-    }
-    setReady(true);
-  }, [storageKey, defaultOn]);
+  const mounted = useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false
+  );
+  const stored = useSyncExternalStore(
+    noopSubscribe,
+    () => {
+      try {
+        return localStorage.getItem(storageKey);
+      } catch {
+        return null;
+      }
+    },
+    () => null
+  );
+  const [override, setOverride] = useState<boolean | null>(null);
+  const on = override ?? (stored === null ? defaultOn : stored === "1");
 
   function toggle() {
     const next = !on;
-    setOn(next);
+    setOverride(next);
     try {
       localStorage.setItem(storageKey, next ? "1" : "0");
     } catch {
@@ -39,7 +49,7 @@ export function PreferenceToggle({
     }
   }
 
-  if (!ready) {
+  if (!mounted) {
     return (
       <div className="flex h-9 items-center justify-between gap-4 py-1">
         <div className="h-4 w-32 animate-pulse rounded bg-muted" />
@@ -62,6 +72,7 @@ export function PreferenceToggle({
         type="button"
         role="switch"
         aria-checked={on}
+        aria-label={label}
         onClick={toggle}
         className={`relative h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
           on ? "bg-foreground" : "bg-muted-foreground/30"
