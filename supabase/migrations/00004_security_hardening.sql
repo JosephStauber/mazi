@@ -14,6 +14,7 @@
 -- (SECURITY DEFINER) below, which bypasses this policy safely.
 -- ------------------------------------------------------------
 drop policy if exists "Users can join or be added" on public.community_members;
+drop policy if exists "Users can join public or bootstrap own community" on public.community_members;
 
 create policy "Users can join public or bootstrap own community"
   on public.community_members for insert
@@ -45,6 +46,7 @@ create policy "Users can join public or bootstrap own community"
 -- ------------------------------------------------------------
 drop policy if exists "Inviter, invitee, or token resolver can view invites"
   on public.community_invites;
+drop policy if exists "Inviter or invitee can view invites" on public.community_invites;
 create policy "Inviter or invitee can view invites"
   on public.community_invites for select
   to authenticated

@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { mapSupabaseUserMessage } from "@/lib/supabase/map-error";
 import { legal } from "@/lib/legal/config";
 
 /**
@@ -17,16 +18,50 @@ export async function exportMyData() {
 
   const id = user.id;
 
-  const [profile, posts, comments, likes, following, followers, memberships] =
-    await Promise.all([
-      supabase.from("profiles").select("*").eq("id", id).maybeSingle(),
-      supabase.from("posts").select("*").eq("author_id", id),
-      supabase.from("comments").select("*").eq("author_id", id),
-      supabase.from("likes").select("*").eq("user_id", id),
-      supabase.from("follows").select("*").eq("follower_id", id),
-      supabase.from("follows").select("*").eq("following_id", id),
-      supabase.from("community_members").select("*").eq("user_id", id),
-    ]);
+  const [
+    profile,
+    posts,
+    comments,
+    likes,
+    following,
+    followers,
+    memberships,
+    notifications,
+    invitesSent,
+    invitesReceived,
+    communitiesCreated,
+  ] = await Promise.all([
+    supabase.from("profiles").select("*").eq("id", id).maybeSingle(),
+    supabase.from("posts").select("*").eq("author_id", id),
+    supabase.from("comments").select("*").eq("author_id", id),
+    supabase.from("likes").select("*").eq("user_id", id),
+    supabase.from("follows").select("*").eq("follower_id", id),
+    supabase.from("follows").select("*").eq("following_id", id),
+    supabase.from("community_members").select("*").eq("user_id", id),
+    supabase.from("notifications").select("*").eq("user_id", id),
+    supabase.from("community_invites").select("*").eq("inviter_id", id),
+    supabase.from("community_invites").select("*").eq("invitee_id", id),
+    supabase.from("communities").select("*").eq("creator_id", id),
+  ]);
+
+  // A portability export must not silently drop rows: a failed query turned into
+  // an empty array would misrepresent what we hold. Surface the first error.
+  const failed = [
+    profile,
+    posts,
+    comments,
+    likes,
+    following,
+    followers,
+    memberships,
+    notifications,
+    invitesSent,
+    invitesReceived,
+    communitiesCreated,
+  ].find((r) => r.error);
+  if (failed?.error) {
+    return { error: mapSupabaseUserMessage(failed.error.message) };
+  }
 
   const data = {
     export: {
@@ -46,6 +81,10 @@ export async function exportMyData() {
     following: following.data ?? [],
     followers: followers.data ?? [],
     community_memberships: memberships.data ?? [],
+    notifications: notifications.data ?? [],
+    invites_sent: invitesSent.data ?? [],
+    invites_received: invitesReceived.data ?? [],
+    communities_created: communitiesCreated.data ?? [],
   };
 
   return { success: true, data };

@@ -3,8 +3,9 @@ import {
   getCurrentUser,
   getProfile,
   getFollowers,
-  getFollowingIdSet,
+  getFollowedSubset,
 } from "@/lib/queries/profiles";
+import { loadMoreFollowers } from "@/lib/actions/pagination";
 import { UserList } from "@/components/profile/user-list";
 import { PageHeader } from "@/components/nav/page-header";
 
@@ -14,25 +15,29 @@ export default async function FollowersPage({
   params: Promise<{ username: string }>;
 }) {
   const { username } = await params;
-  const currentUser = await getCurrentUser();
+  const [currentUser, profile] = await Promise.all([
+    getCurrentUser(),
+    getProfile(username),
+  ]);
   if (!currentUser) redirect("/login");
-
-  const profile = await getProfile(username);
   if (!profile) notFound();
 
-  const [followers, followingIds] = await Promise.all([
-    getFollowers(profile.id),
-    getFollowingIdSet(currentUser.id),
-  ]);
+  const followers = await getFollowers(profile.id);
+  const followedIds = await getFollowedSubset(
+    currentUser.id,
+    followers.items.map((u) => u.id)
+  );
 
   return (
     <div>
       <PageHeader title={profile.username} subtitle="Followers" back />
       <div className="pt-2">
         <UserList
-          users={followers}
+          initialUsers={followers.items}
+          initialCursor={followers.nextCursor}
+          initialFollowedIds={[...followedIds]}
+          loadMore={loadMoreFollowers.bind(null, profile.id)}
           currentUserId={currentUser.id}
-          followingIds={followingIds}
           emptyTitle="No followers yet"
           emptyDescription={`When someone follows @${profile.username}, they'll appear here.`}
         />

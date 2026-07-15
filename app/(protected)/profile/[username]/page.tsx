@@ -8,7 +8,8 @@ import {
   isFollowing,
   getUserCommunities,
 } from "@/lib/queries/profiles";
-import { getPostsByUser } from "@/lib/queries/posts";
+import { getPostsByUser, getPostCountByUser } from "@/lib/queries/posts";
+import { loadMoreProfilePosts } from "@/lib/actions/pagination";
 import { Avatar } from "@/components/ui/avatar";
 import { FollowButton } from "@/components/profile/follow-button";
 import { ProfileTabs } from "@/components/profile/profile-tabs";
@@ -22,15 +23,17 @@ export default async function ProfilePage({
   params: Promise<{ username: string }>;
 }) {
   const { username } = await params;
-  const currentUser = await getCurrentUser();
+  // The viewer and the profile being viewed are independent reads.
+  const [currentUser, profile] = await Promise.all([
+    getCurrentUser(),
+    getProfile(username),
+  ]);
   if (!currentUser) redirect("/login");
-
-  const profile = await getProfile(username);
   if (!profile) notFound();
 
   const isOwnProfile = currentUser.id === profile.id;
 
-  const [followers, following, userFollows, posts, communities] =
+  const [followers, following, userFollows, postsPage, postsCount, communities] =
     await Promise.all([
       getFollowerCount(profile.id),
       getFollowingCount(profile.id),
@@ -38,6 +41,7 @@ export default async function ProfilePage({
         ? Promise.resolve(false)
         : isFollowing(currentUser.id, profile.id),
       getPostsByUser(profile.id, currentUser.id),
+      getPostCountByUser(profile.id),
       getUserCommunities(profile.id),
     ]);
 
@@ -47,7 +51,7 @@ export default async function ProfilePage({
     <div>
       <PageHeader
         title={profile.username}
-        subtitle={`${posts.length} ${posts.length === 1 ? "post" : "posts"}`}
+        subtitle={`${postsCount} ${postsCount === 1 ? "post" : "posts"}`}
         back
         action={
           isOwnProfile ? (
@@ -131,7 +135,10 @@ export default async function ProfilePage({
 
       <div className="mt-6">
         <ProfileTabs
-          posts={posts}
+          initialPosts={postsPage.items}
+          postsCursor={postsPage.nextCursor}
+          postsCount={postsCount}
+          loadMore={loadMoreProfilePosts.bind(null, profile.id)}
           currentUserId={currentUser.id}
           isOwnProfile={isOwnProfile}
         />

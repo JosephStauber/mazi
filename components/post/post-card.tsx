@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -28,7 +28,7 @@ interface PostCardProps {
   canModerate?: boolean;
 }
 
-export function PostCard({ post, currentUserId, canModerate }: PostCardProps) {
+function PostCardImpl({ post, currentUserId, canModerate }: PostCardProps) {
   const { toast } = useToast();
   const [liked, setLiked] = useState(post.liked_by_user);
   const [likesCount, setLikesCount] = useState(post.likes_count);
@@ -66,25 +66,42 @@ export function PostCard({ post, currentUserId, canModerate }: PostCardProps) {
       setLikeAnim(true);
       setTimeout(() => setLikeAnim(false), 420);
     }
-    toggleLike(post.id).catch(() => {
+    const rollback = () => {
       setLiked(!next);
       setLikesCount((c) => c + (next ? -1 : 1));
       toast("Couldn't update like", "error");
-    });
+    };
+    toggleLike(post.id)
+      .then((res) => {
+        if (res?.error) rollback();
+      })
+      .catch(rollback);
   }
 
   function handleLike() {
     applyLike(!liked);
   }
 
-  function handleImageTap() {
+  function likeFromImage() {
+    if (!liked) applyLike(true);
+    setBurst(true);
+    setTimeout(() => setBurst(false), 850);
+  }
+
+  function handleImageActivate(e: React.MouseEvent) {
+    // Keyboard activation reports detail 0 — like immediately. Pointer taps
+    // keep the double-tap gesture so a single tap doesn't like accidentally.
+    if (e.detail === 0) {
+      likeFromImage();
+      return;
+    }
     const now = Date.now();
     if (now - lastTap.current < 300) {
-      if (!liked) applyLike(true);
-      setBurst(true);
-      setTimeout(() => setBurst(false), 850);
+      likeFromImage();
+      lastTap.current = 0;
+    } else {
+      lastTap.current = now;
     }
-    lastTap.current = now;
   }
 
   async function handleShare() {
@@ -136,7 +153,7 @@ export function PostCard({ post, currentUserId, canModerate }: PostCardProps) {
   if (deleted) return null;
 
   return (
-    <article className="px-4 py-4 transition-colors sm:px-5">
+    <article className="px-4 py-4 transition-colors sm:px-5 [contain-intrinsic-size:auto_320px] [content-visibility:auto]">
       <div className="flex items-center gap-3">
         <Link href={`/profile/${post.author.username}`} className="shrink-0">
           <Avatar src={post.author.avatar_url} alt={post.author.username} size="sm" />
@@ -156,9 +173,12 @@ export function PostCard({ post, currentUserId, canModerate }: PostCardProps) {
               in {post.community.name}
             </Link>
           )}
-          <span className="text-xs text-subtle">
+          <Link
+            href={`/post/${post.id}`}
+            className="text-xs text-subtle hover:text-foreground"
+          >
             · {formatRelative(post.created_at)}
-          </span>
+          </Link>
         </div>
 
         {(isOwner || canModerate) && (
@@ -236,19 +256,16 @@ export function PostCard({ post, currentUserId, canModerate }: PostCardProps) {
           </div>
         ) : (
           content && (
-            <Link href={`/post/${post.id}`} className="block">
-              <RichText
-                text={content}
-                className="text-[15px] leading-relaxed"
-              />
-            </Link>
+            <RichText text={content} className="text-[15px] leading-relaxed" />
           )
         )}
 
         {post.image_url && (
-          <div
-            className="relative mt-3 max-h-[640px] cursor-pointer overflow-hidden rounded-[var(--radius-md)] border border-border bg-muted"
-            onClick={handleImageTap}
+          <button
+            type="button"
+            onClick={handleImageActivate}
+            aria-label={liked ? "Post liked" : "Like post"}
+            className="relative mt-3 block max-h-[640px] w-full cursor-pointer overflow-hidden rounded-[var(--radius-md)] border border-border bg-muted"
           >
             <Image
               src={post.image_url}
@@ -264,7 +281,7 @@ export function PostCard({ post, currentUserId, canModerate }: PostCardProps) {
                 </span>
               </span>
             )}
-          </div>
+          </button>
         )}
 
         <div className="mt-3 flex items-center gap-1 text-muted-foreground">
@@ -338,3 +355,11 @@ export function PostCard({ post, currentUserId, canModerate }: PostCardProps) {
     </article>
   );
 }
+
+/**
+ * Memoized so growing a feed (each "load more" appends a page and re-renders the
+ * list) doesn't re-render every already-mounted card — props are the post plus
+ * two primitives, so a shallow compare is safe. Paired with `content-visibility`
+ * on the article, off-screen cards in a long feed skip render/layout work too.
+ */
+export const PostCard = memo(PostCardImpl);

@@ -3,10 +3,11 @@ import { Suspense } from "react";
 import { getCurrentUser } from "@/lib/queries/profiles";
 import { getCommunities } from "@/lib/queries/communities";
 import { getCommunitiesFeed } from "@/lib/queries/feed";
+import { loadMoreCommunities } from "@/lib/actions/feed";
 import { CommunityCard } from "@/components/community/community-card";
 import { CreateCommunityForm } from "@/components/community/create-community-form";
 import { CommunityFeedFilter } from "@/components/community/community-feed-filter";
-import { PostCard } from "@/components/post/post-card";
+import { InfiniteFeed } from "@/components/feed/infinite-feed";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/nav/page-header";
 import { CommunitiesIcon } from "@/components/ui/icon";
@@ -30,6 +31,7 @@ export default async function CommunitiesPage({
   const memberCommunities = communities
     .filter((c) => c.is_member)
     .map((c) => ({ id: c.id, name: c.name }));
+  const memberIds = memberCommunities.map((c) => c.id);
 
   const { community: communityParam } = await searchParams;
   const filterId =
@@ -39,7 +41,14 @@ export default async function CommunitiesPage({
       ? communityParam
       : null;
 
-  const communityPosts = await getCommunitiesFeed(user.id, filterId);
+  // Reuse the membership ids we just read (getCommunities) instead of letting
+  // getCommunitiesFeed re-query community_members for the same request.
+  const communityFeed = await getCommunitiesFeed(
+    user.id,
+    filterId,
+    null,
+    memberIds
+  );
 
   return (
     <div>
@@ -60,7 +69,7 @@ export default async function CommunitiesPage({
             title="Join the conversation"
             description="Join a community below to see its posts here, or create your own."
           />
-        ) : communityPosts.length === 0 ? (
+        ) : communityFeed.items.length === 0 ? (
           <EmptyState
             icon={<CommunitiesIcon size={24} />}
             title="No posts yet"
@@ -71,11 +80,12 @@ export default async function CommunitiesPage({
             }
           />
         ) : (
-          <div className="divide-y divide-border">
-            {communityPosts.map((post) => (
-              <PostCard key={post.id} post={post} currentUserId={user.id} />
-            ))}
-          </div>
+          <InfiniteFeed
+            initialPosts={communityFeed.items}
+            initialCursor={communityFeed.nextCursor}
+            currentUserId={user.id}
+            loadMore={loadMoreCommunities.bind(null, filterId)}
+          />
         )}
       </section>
 

@@ -5,7 +5,8 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useState,
+  useRef,
+  useSyncExternalStore,
   ReactNode,
 } from "react";
 import { cn } from "@/lib/utils/cn";
@@ -30,44 +31,67 @@ export function useTheme() {
 /** Runs before paint to avoid a flash of the wrong theme. */
 export const themeScript = `(function(){try{var t=localStorage.getItem('theme')||'system';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);}catch(e){}})();`;
 
-function systemPrefersDark() {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches
-  );
+function subscribeTheme(cb: () => void) {
+  window.addEventListener("theme-change", cb);
+  window.addEventListener("storage", cb);
+  return () => {
+    window.removeEventListener("theme-change", cb);
+    window.removeEventListener("storage", cb);
+  };
+}
+
+function getStoredTheme(): Theme {
+  try {
+    return (localStorage.getItem("theme") as Theme) || "system";
+  } catch {
+    return "system";
+  }
+}
+
+function subscribeSystem(cb: () => void) {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  mq.addEventListener("change", cb);
+  return () => mq.removeEventListener("change", cb);
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("system");
-  const [resolved, setResolved] = useState<"light" | "dark">("light");
-
-  const apply = useCallback((t: Theme) => {
-    const dark = t === "dark" || (t === "system" && systemPrefersDark());
-    document.documentElement.classList.toggle("dark", dark);
-    setResolved(dark ? "dark" : "light");
-  }, []);
-
-  useEffect(() => {
-    const stored = (localStorage.getItem("theme") as Theme) || "system";
-    setThemeState(stored);
-    apply(stored);
-
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => {
-      if ((localStorage.getItem("theme") || "system") === "system") apply("system");
-    };
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, [apply]);
-
-  const setTheme = useCallback(
-    (t: Theme) => {
-      localStorage.setItem("theme", t);
-      setThemeState(t);
-      apply(t);
-    },
-    [apply]
+  // Both theme (localStorage) and the system preference are external stores;
+  // reading them via useSyncExternalStore keeps initialization out of an effect
+  // (no react-hooks/set-state-in-effect) and derives `resolved` instead of
+  // storing it. The effect only writes the DOM class.
+  const theme = useSyncExternalStore<Theme>(
+    subscribeTheme,
+    getStoredTheme,
+    () => "system"
   );
+  const systemDark = useSyncExternalStore(
+    subscribeSystem,
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
+    () => false
+  );
+  const resolved: "light" | "dark" =
+    theme === "dark" || (theme === "system" && systemDark) ? "dark" : "light";
+
+  // The pre-paint `themeScript` already set the correct initial class, so skip
+  // the first commit (which may still hold the server snapshot) to avoid a flash;
+  // apply on every later change.
+  const firstApply = useRef(true);
+  useEffect(() => {
+    if (firstApply.current) {
+      firstApply.current = false;
+      return;
+    }
+    document.documentElement.classList.toggle("dark", resolved === "dark");
+  }, [resolved]);
+
+  const setTheme = useCallback((t: Theme) => {
+    try {
+      localStorage.setItem("theme", t);
+    } catch {
+      /* private mode */
+    }
+    window.dispatchEvent(new Event("theme-change"));
+  }, []);
 
   return (
     <ThemeContext.Provider value={{ theme, resolved, setTheme }}>

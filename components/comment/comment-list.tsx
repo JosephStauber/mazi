@@ -10,12 +10,14 @@ import { RichText } from "@/components/ui/rich-text";
 import { MentionTextarea } from "@/components/ui/mention-textarea";
 import { useToast } from "@/components/ui/toast";
 import { CommentIcon, MoreIcon, EditIcon, TrashIcon } from "@/components/ui/icon";
-import type { CommentWithAuthor, Profile } from "@/lib/types/database";
+import type { CommentWithAuthor, Page, Profile } from "@/lib/types/database";
 import { createComment, deleteComment, editComment } from "@/lib/actions/comment";
 import { formatRelative } from "@/lib/utils/date";
 
 interface CommentListProps {
   comments: CommentWithAuthor[];
+  initialCursor: string | null;
+  loadMore: (cursor: string) => Promise<Page<CommentWithAuthor>>;
   postId: string;
   currentUser: Profile;
   canModerate?: boolean;
@@ -36,15 +38,36 @@ function rootIdOf(
 
 export function CommentList({
   comments: initial,
+  initialCursor,
+  loadMore,
   postId,
   currentUser,
   canModerate,
 }: CommentListProps) {
   const { toast } = useToast();
   const [comments, setComments] = useState(initial);
+  const [cursor, setCursor] = useState<string | null>(initialCursor);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [value, setValue] = useState("");
   const [loading, setLoading] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // Comments paginate by root (oldest first); a page also carries its roots'
+  // replies. Merge fetched pages into the same list the optimistic writes use.
+  async function fetchMore() {
+    if (loadingMore || cursor === null) return;
+    setLoadingMore(true);
+    try {
+      const page = await loadMore(cursor);
+      setComments((prev) => {
+        const seen = new Set(prev.map((c) => c.id));
+        return [...prev, ...page.items.filter((c) => !seen.has(c.id))];
+      });
+      setCursor(page.nextCursor);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   const { roots, repliesByRoot } = useMemo(() => {
     const byId = new Map(comments.map((c) => [c.id, c]));
@@ -102,6 +125,15 @@ export function CommentList({
       setComments((c) => c.filter((x) => x.id !== optimistic.id));
       setValue(content);
       toast(result.error, "error");
+    } else if (result && "comment" in result && result.comment) {
+      const persisted = result.comment;
+      setComments((c) =>
+        c.map((x) =>
+          x.id === optimistic.id
+            ? { ...x, id: persisted.id, created_at: persisted.created_at }
+            : x
+        )
+      );
     }
   }
 
@@ -127,6 +159,16 @@ export function CommentList({
       setComments((c) => c.filter((x) => x.id !== optimistic.id));
       toast(result.error, "error");
       return false;
+    }
+    if (result && "comment" in result && result.comment) {
+      const persisted = result.comment;
+      setComments((c) =>
+        c.map((x) =>
+          x.id === optimistic.id
+            ? { ...x, id: persisted.id, created_at: persisted.created_at }
+            : x
+        )
+      );
     }
     return true;
   }
@@ -205,6 +247,19 @@ export function CommentList({
           ))}
         </ul>
       )}
+
+      {cursor !== null && (
+        <div className="flex justify-center py-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={loadingMore}
+            onClick={fetchMore}
+          >
+            Load more comments
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -260,7 +315,6 @@ function CommentThread({
     <div>
       <CommentRow
         comment={root}
-        currentUser={currentUser}
         canDelete={root.author_id === currentUser.id || canModerate}
         canEdit={root.author_id === currentUser.id}
         onDelete={() => onDelete(root.id)}
@@ -274,7 +328,6 @@ function CommentThread({
             <CommentRow
               key={reply.id}
               comment={reply}
-              currentUser={currentUser}
               canDelete={reply.author_id === currentUser.id || canModerate}
               canEdit={reply.author_id === currentUser.id}
               onDelete={() => onDelete(reply.id)}
@@ -334,7 +387,6 @@ function CommentThread({
 
 function CommentRow({
   comment,
-  currentUser,
   canDelete,
   canEdit,
   onDelete,
@@ -343,7 +395,6 @@ function CommentRow({
   compact,
 }: {
   comment: CommentWithAuthor;
-  currentUser: Profile;
   canDelete: boolean;
   canEdit: boolean;
   onDelete: () => void;

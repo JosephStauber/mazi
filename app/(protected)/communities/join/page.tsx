@@ -13,23 +13,28 @@ export default function JoinByTokenPage() {
   const router = useRouter();
   const token = searchParams.get("token");
 
-  const [loading, setLoading] = useState(true);
+  // No token is knowable at first render — derive it instead of setting state in
+  // an effect (avoids react-hooks/set-state-in-effect). Only load if we have one.
+  const [loading, setLoading] = useState(!!token);
   const [accepting, setAccepting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    token ? null : "No invite token provided"
+  );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [invite, setInvite] = useState<any>(null);
 
   useEffect(() => {
-    if (!token) {
-      setError("No invite token provided");
-      setLoading(false);
-      return;
-    }
+    if (!token) return;
+    let active = true;
     resolveInviteToken(token).then((result) => {
+      if (!active) return;
       if (result.error) setError(result.error);
       else setInvite(result.invite);
       setLoading(false);
     });
+    return () => {
+      active = false;
+    };
   }, [token]);
 
   async function handleAccept() {

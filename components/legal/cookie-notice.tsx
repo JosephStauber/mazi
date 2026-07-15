@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 
 const STORAGE_KEY = "mazi_cookie_ack";
+
+// The acknowledgement flag lives in localStorage; reading it via
+// useSyncExternalStore keeps it out of an effect (avoids
+// react-hooks/set-state-in-effect) and defaults to hidden on the server.
+const noopSubscribe = () => () => {};
 
 /**
  * Non-blocking disclosure. We only set strictly-necessary cookies, so consent
@@ -11,15 +16,19 @@ const STORAGE_KEY = "mazi_cookie_ack";
  * transparency expectations, and remembers the dismissal on their device.
  */
 export function CookieNotice() {
-  const [show, setShow] = useState(false);
-
-  useEffect(() => {
-    try {
-      if (!localStorage.getItem(STORAGE_KEY)) setShow(true);
-    } catch {
-      /* localStorage unavailable — stay hidden */
-    }
-  }, []);
+  const acked = useSyncExternalStore(
+    noopSubscribe,
+    () => {
+      try {
+        return !!localStorage.getItem(STORAGE_KEY);
+      } catch {
+        return true;
+      }
+    },
+    () => true
+  );
+  const [dismissed, setDismissed] = useState(false);
+  const show = !acked && !dismissed;
 
   function dismiss() {
     try {
@@ -27,7 +36,7 @@ export function CookieNotice() {
     } catch {
       /* ignore */
     }
-    setShow(false);
+    setDismissed(true);
   }
 
   if (!show) return null;

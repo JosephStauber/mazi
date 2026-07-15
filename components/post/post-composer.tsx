@@ -95,8 +95,10 @@ export function PostComposer({
   }
 
   async function handleSubmit(formData: FormData) {
-    if (!value.trim() && !previewUrl) {
-      toast("Write something or add an image", "error");
+    // The server requires non-empty text (createPostSchema), so an image-only
+    // post would fail after upload — gate on text to match that contract.
+    if (!value.trim()) {
+      toast("Write something to post", "error");
       return;
     }
     setLoading(true);
@@ -204,6 +206,7 @@ export function PostComposer({
           communities.length > 0 && (
             <select
               name="community_id"
+              aria-label="Post to community"
               defaultValue=""
               className="h-9 rounded-full border border-border bg-surface px-3 text-sm text-foreground focus:border-foreground focus:outline-none"
             >

@@ -1,3 +1,15 @@
+/**
+ * One page of a keyset-paginated list. `nextCursor` is an opaque token
+ * (see `lib/utils/cursor.ts`) or `null` when there are no more rows.
+ */
+export type Page<T> = {
+  items: T[];
+  nextCursor: string | null;
+};
+
+/** A page of profiles plus which of them the current user follows. */
+export type UserPage = Page<ProfileListItem> & { followedIds: string[] };
+
 export type Profile = {
   id: string;
   username: string;
@@ -5,6 +17,19 @@ export type Profile = {
   avatar_url: string | null;
   created_at: string;
 };
+
+/**
+ * The profile fields actually rendered when a profile is embedded as a relation
+ * (post/comment author, notification actor, community member). Selecting these
+ * instead of `profiles(*)` keeps `bio`/`created_at` out of every feed row.
+ */
+export type ProfileRef = Pick<Profile, "id" | "username" | "avatar_url">;
+
+/** Profile fields rendered in follower/following lists (adds the shown `bio`). */
+export type ProfileListItem = Pick<
+  Profile,
+  "id" | "username" | "avatar_url" | "bio"
+>;
 
 export type Post = {
   id: string;
@@ -16,7 +41,7 @@ export type Post = {
 };
 
 export type PostWithAuthor = Post & {
-  author: Profile;
+  author: ProfileRef;
   community: Pick<Community, "id" | "name" | "slug"> | null;
   likes_count: number;
   comments_count: number;
@@ -33,7 +58,7 @@ export type Comment = {
 };
 
 export type CommentWithAuthor = Comment & {
-  author: Profile;
+  author: ProfileRef;
 };
 
 export type Like = {
@@ -77,7 +102,7 @@ export type CommunityMember = {
 };
 
 export type CommunityMemberWithProfile = CommunityMember & {
-  profile: Profile;
+  profile: ProfileRef;
 };
 
 export type InviteStatus = "pending" | "accepted" | "declined" | "expired";
@@ -113,6 +138,6 @@ export type Notification = {
 };
 
 export type NotificationWithActor = Notification & {
-  actor: Profile | null;
+  actor: ProfileRef | null;
   community: Pick<Community, "id" | "name" | "slug"> | null;
 };

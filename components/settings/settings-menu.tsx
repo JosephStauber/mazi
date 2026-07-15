@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -12,7 +12,6 @@ import {
 } from "@/lib/actions/auth";
 import { exportMyData } from "@/lib/actions/account";
 import { PreferenceToggle } from "@/components/settings/preference-toggle";
-import { createClient } from "@/lib/supabase/client";
 
 function Section({
   title,
@@ -38,24 +37,12 @@ function Section({
   );
 }
 
-export function SettingsMenu() {
+export function SettingsMenu({ email }: { email: string | null }) {
   const { toast } = useToast();
-  const [email, setEmail] = useState<string | null>(null);
   const [pwLoading, setPwLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  useEffect(() => {
-    async function load() {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setEmail(user?.email ?? null);
-    }
-    load();
-  }, []);
 
   async function handlePasswordReset() {
     setPwLoading(true);

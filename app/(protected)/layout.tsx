@@ -1,43 +1,27 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getCurrentUser } from "@/lib/queries/profiles";
 import { getUnreadCount } from "@/lib/queries/notifications";
 import { DesktopNav } from "@/components/nav/desktop-nav";
 import { MobileNav } from "@/components/nav/mobile-nav";
 import { MobileHeader } from "@/components/nav/mobile-header";
 import { PageTransition } from "@/components/nav/page-transition";
-import type { Profile } from "@/lib/types/database";
 
 export default async function ProtectedLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-
+  const authUser = await getAuthUser();
   if (!authUser) redirect("/login");
 
-  const { data: dbProfile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", authUser.id)
-    .single();
-
-  const profile: Profile =
-    dbProfile ?? {
-      id: authUser.id,
-      username:
-        authUser.user_metadata?.username ??
-        authUser.email?.split("@")[0] ??
-        "user",
-      bio: null,
-      avatar_url: null,
-      created_at: new Date().toISOString(),
-    };
-
-  const unreadCount = dbProfile ? await getUnreadCount(profile.id) : 0;
+  // Profile is request-memoized (getCurrentUser) so the wrapped page reuses it
+  // without a second read; the unread count is independent, so start it in
+  // parallel rather than after the profile resolves.
+  const [profile, unreadCount] = await Promise.all([
+    getCurrentUser(),
+    getUnreadCount(authUser.id),
+  ]);
+  if (!profile) redirect("/login");
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
