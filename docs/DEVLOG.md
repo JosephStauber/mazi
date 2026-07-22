@@ -17,6 +17,25 @@ The running memory of the project. **Every meaningful change gets an entry**, ne
 
 ## Entries
 
+## 2026-07-15 — Second-opinion review triage (next CVE bump, infinite-list reset, notif binding, a11y)
+**By:** Claude (agent)
+**Summary:** Reviewed an external (GPT) findings list against the actual code; patched the accurate ones, rejected two with reasons.
+**Patched:**
+- **`next` 16.1.6 → 16.2.10** (`package.json`). `npm audit` flagged multiple **high** App Router advisories on 16.1.6 — Middleware/Proxy bypass, SSRF via WebSocket upgrades, Server Actions CSRF bypass, cache poisoning, XSS. The bump clears all of them; `npm audit fix` (non-breaking) also cleared a transitive `ws` high. Remaining audit noise = 2 moderate `postcss` advisories **bundled inside next** (only "fix" is a next@9.3.3 downgrade — not taken; build-time-only).
+- **Infinite-list state reset** (`lib/hooks/use-infinite-list.ts`). `useState(initialItems)` never re-synced, so a community-filter switch (or profile→profile nav, or `router.refresh()`) kept the old list mounted and load-more appended the new filter's page onto stale rows. Now resets items/cursor when the RSC hands a new `initialItems` reference (stable across client-only re-renders, so load-more is unaffected).
+- **Mention-notification post binding** (`supabase/migrations/00009_*.sql`, **pending apply**). 00006/D bound `type='comment'` to its post, but the `mention`-of-a-comment sub-branch didn't, so a real @mention notification could be relinked to an unrelated `post_id`. 00009 re-creates the policy adding `c.post_id = notifications.post_id` there; `notifyMentions` already sets post_id to the comment's post, so legit inserts pass.
+- **Follow revalidation** (`lib/actions/follow.ts`). `revalidatePath("/profile")` matched no route (profiles are `/profile/[username]`), so counts/lists stayed stale. Now revalidates the dynamic profile route + followers/following lists.
+- **Composer rejected-file** (`components/post/post-composer.tsx`). Choosing an invalid replacement image revoked the current preview but left the rejected file in the input (submitted, then server-rejected). Now clears the input + preview on rejection.
+- **Mention autocomplete Escape/select** (`components/ui/mention-textarea.tsx`). Escape/select didn't cancel the in-flight debounce, so a late response could reopen the dropdown. Now clears the timer and bumps the request id.
+- **Tabs keyboard a11y** (`components/ui/tabs.tsx`). Added roving `tabindex` + Arrow/Home/End focus movement and `aria-selected` on the link variant (was a `role="tablist"` with no keyboard model).
+- **SETUP.md** listed migrations only through 00005; now lists 00006–00009.
+**Rejected (with reason):**
+- *"reply-to-reply comments disappear after pagination"* — **not a real bug.** The reply UI parents every reply to `root.id` (`CommentThread.sendReply → onReply(root.id)`), so app data is strictly one level deep and `.in("parent_id", rootIds)` captures all of it. Depth-2 is only reachable via hand-crafted API calls.
+- *"post-images bucket is public"* — **accurate but a deliberate deferred item** (TODO). Making it private without rewriting delivery to signed URLs would break every image; it needs its own change, not a one-line patch.
+**Changed:** `package.json`, `package-lock.json`, `lib/hooks/use-infinite-list.ts`, `lib/actions/follow.ts`, `components/post/post-composer.tsx`, `components/ui/mention-textarea.tsx`, `components/ui/tabs.tsx`, `supabase/migrations/00009_mention_notification_post_binding.sql` (new, **pending apply**), `docs/{SECURITY,DATABASE,SETUP,TODO}.md`.
+**Verify:** `npx tsc --noEmit`, `npx eslint .`, `npx next build` all pass on next 16.2.10; `git diff --check` clean. `00009` still needs a manual apply (after `00008`). Runtime not exercised against a live session; spot-check: switch the community feed filter and confirm the list replaces (doesn't append); follow/unfollow updates profile counts; pick a non-image after a valid image in the composer and confirm it's cleared.
+**Follow-ups:** apply `00009`; private `post-images` bucket still open.
+
 ## 2026-07-15 — Pre-merge review fixes (username CHECK, invite-RPC grant, doc drift)
 **By:** Claude (agent)
 **Summary:** Closed the three residual findings from the pre-merge review of the uncommitted security/pagination/perf work. All non-blocking, all low-severity, but each is a real DB-layer or accuracy gap.

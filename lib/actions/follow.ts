@@ -37,7 +37,12 @@ export async function toggleFollow(targetUserId: string) {
     });
   }
 
-  revalidatePath("/profile");
+  // Profiles live at /profile/[username]; a bare "/profile" path matches no page
+  // and revalidated nothing, leaving follower/following counts + lists stale.
+  // Revalidate the dynamic profile route (both viewer and target) and its lists.
+  revalidatePath("/profile/[username]", "page");
+  revalidatePath("/profile/[username]/followers", "page");
+  revalidatePath("/profile/[username]/following", "page");
   revalidatePath("/home");
   return { success: true, following: !existing };
 }

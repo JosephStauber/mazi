@@ -111,6 +111,10 @@ export const MentionTextarea = forwardRef<
     const next = before + inserted + after;
     pendingCaret.current = before.length + inserted.length;
     onChange(next);
+    // Invalidate any pending/in-flight query so it can't reopen the dropdown
+    // after we've inserted a mention.
+    clearDebounce();
+    reqId.current++;
     setOpen(false);
     queryRef.current = null;
   }
@@ -134,6 +138,11 @@ export const MentionTextarea = forwardRef<
       }
       if (e.key === "Escape") {
         e.preventDefault();
+        // Cancel any pending/in-flight query so a late response can't reopen
+        // the dropdown the user just dismissed.
+        clearDebounce();
+        reqId.current++;
+        queryRef.current = null;
         setOpen(false);
         return;
       }

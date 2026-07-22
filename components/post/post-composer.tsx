@@ -64,10 +64,14 @@ export function PostComposer({
     }
     if (!file.type.startsWith("image/")) {
       toast("Please choose an image file", "error");
+      // Don't leave the rejected file in the input (it would still be submitted
+      // and would fail server-side); clear it and the now-revoked preview.
+      removeImage();
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
       toast("Image must be under 5MB", "error");
+      removeImage();
       return;
     }
     setPreviewUrl(URL.createObjectURL(file));
