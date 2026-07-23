@@ -39,6 +39,10 @@ supabase/migrations/00002_mentions_and_replies.sql
 supabase/migrations/00003_account_deletion.sql
 supabase/migrations/00004_security_hardening.sql
 supabase/migrations/00005_review_fixes.sql
+supabase/migrations/00006_rls_integrity_fixes.sql
+supabase/migrations/00007_pagination_indexes.sql
+supabase/migrations/00008_username_check_and_grants.sql
+supabase/migrations/00009_mention_notification_post_binding.sql
 ```
 
 They're idempotent, so re-running is safe. See [`DATABASE.md`](DATABASE.md) for what each adds. `00001` also creates the `avatars` and `post-images` storage buckets and their policies.

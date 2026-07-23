@@ -32,6 +32,20 @@ export function useInfiniteList<T extends { id: string }, P extends Page<T> = Pa
   const loadingRef = useRef(false);
   const done = cursor === null;
 
+  // Reset the list when the server hands a genuinely new initial page — a
+  // community-filter switch, profile→profile navigation, or `router.refresh()`.
+  // The RSC produces a fresh `initialItems` reference only on a real server
+  // re-render; client-only re-renders (load more) keep the same reference, so a
+  // reference change is the reset signal. Setting state during render is the
+  // supported "reset on prop change" pattern (no effect, no extra commit).
+  const prevInitial = useRef(initialItems);
+  if (prevInitial.current !== initialItems) {
+    prevInitial.current = initialItems;
+    loadingRef.current = false;
+    setItems(initialItems);
+    setCursor(initialCursor);
+  }
+
   // Keep loader/callback identity out of the effect deps so a parent that
   // re-creates them per render doesn't thrash the observer.
   const loadMoreRef = useRef(loadMore);
