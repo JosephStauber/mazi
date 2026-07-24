@@ -37,6 +37,13 @@ The browser holds the Supabase **anon key + the user's JWT** and can call the Po
 | `community_members` | any authenticated | self-join **public** or bootstrap **creator** of own community (F1/F2); invite-only joins go through `accept_invite` | delete: self or mod/creator. **No UPDATE policy** → roles immutable (see moderator note) |
 | `community_invites` | inviter or invitee only (F3) | mod/creator of the community | **No client UPDATE policy** (00006/A) → metadata immutable; the only transition is a targeted invitee declining via `decline_invite` |
 | `notifications` | recipient only (`user_id = auth.uid()`) | `actor_id = auth.uid()` and F11 relationship checks; the `comment` branch also binds `comment_id.post_id = post_id` (00006/D) | update own (mark read) |
+| `reservations` (00010) | **owner only** (`auth.uid() = profile_id`) | owner only; in practice written by `handle_new_user()` (definer) at signup | none (referral counts via `get_referral_count()`) |
+
+**Pre-launch access-tier gate (00010 + hardened in 00012).** A `reserved` account holds a real JWT + the anon key, so the "outside the app" boundary is enforced entirely at the DB:
+- **Writes** — every "using the app" INSERT (posts/comments/likes/follows/communities/community_members) requires `public.has_full_access()`, and `accept_invite` checks it internally. 00012 adds **restrictive** policies extending the gate to update/delete, notification/invite creation, and `post-images` storage upload.
+- **Reads** — 00012 adds **restrictive SELECT** policies (`has_full_access()`, with an own-row escape for profiles) so a reserved user can read only their own profile + their own reservation, not the social graph.
+- **The tier column itself** — `profiles` table-level INSERT/UPDATE is revoked from `authenticated`; only `(username, bio, avatar_url)` are granted, so a client can never write `access_level` (closes self-promotion). The tier is set by the signup trigger from the **RLS-locked `app_config.signup_mode`** — never from client metadata or the public env flag — so a direct `/auth/v1/signup` during reservation mode still lands `reserved`.
+- **`reservations`** are trigger-written only (no client INSERT policy). Existing rows default to `full`, so real users are unaffected. Middleware/layout redirects are only UX. See [`ONBOARDING.md`](ONBOARDING.md).
 
 `comments.parent_id` is DB-enforced (trigger `comments_parent_integrity`, 00006/G) to reference a comment on the **same** `post_id` and never itself.
 
@@ -50,7 +57,12 @@ Storage (`avatars`, `post-images` buckets):
 
 These run with elevated rights and each pin `search_path = public`:
 
-- `handle_new_user()` — trigger on `auth.users` insert; creates the `profiles` row, collision-tolerant on username (F12).
+- `handle_new_user()` — trigger on `auth.users` insert; creates the `profiles` row, collision-tolerant on username (F12). `00010`: reservation signups (`raw_user_meta_data.reservation = 'true'`) get `access_level='reserved'` + a `reservations` row atomically.
+- `has_full_access()` (`00010`) — the access-tier gate; returns whether the caller's profile is `full`. Used in the write-side policies above and inside `accept_invite`. Reserved/missing profile → false.
+- `username_available(text)` (`00010`) — the **one anon-callable** definer here (funnel needs it before signup). Returns only a boolean; reads no rows out. `execute` granted to `anon` + `authenticated`.
+- `get_referral_count()` (`00010`) — count of the caller's own referrals; lets the invite panel show a number without exposing others' reservation rows.
+- `rate_limit_hit(bucket, key, max, window)` (`00010`) — anon-callable DB throttle for the reserve funnel; records/reads the RLS-locked `rate_limits` table. Fails open.
+- `is_admin()` / `admin_reservation_stats()` / `admin_reservation_list()` (`00011`) — the dashboard. `is_admin()` gates the other two, which raise `Not authorized` otherwise. `admin_reservation_list()` is the sole client path to reservation emails. All `authenticated`-only.
 - `delete_user()` — right-to-erasure; deletes only `auth.uid()`'s own auth user (cascades to all their data).
 - `get_invite_by_token(token)` — resolves a shareable invite to public community fields, pending+unexpired only.
 - `accept_invite(invite_id)` — validates + joins atomically; tokened links multi-use, targeted invites single-use **and accepted only from `pending`** so a removed member cannot rejoin (00006/E).
@@ -58,7 +70,7 @@ These run with elevated rights and each pin `search_path = public`:
 
 `enforce_comment_parent_integrity()` — `SECURITY DEFINER` trigger (not a client RPC) enforcing the `comments.parent_id` same-post / non-self rule (00006/G).
 
-When adding a definer function: pin `search_path`, `revoke` from `public`/`anon`, `grant execute` to `authenticated`, and scope every action to `auth.uid()`.
+When adding a definer function: pin `search_path`, `revoke` from `public`/`anon`, `grant execute` to `authenticated`, and scope every action to `auth.uid()`. The one deliberate exception is `username_available(text)` (granted `anon`) — the pre-signup funnel needs it; it takes no side effects and returns only a boolean, leaking nothing beyond "is this handle taken."
 
 ## Input validation & integrity
 
@@ -71,6 +83,8 @@ When adding a definer function: pin `search_path`, `revoke` from `public`/`anon`
 - **Write-through on hidden posts** — closed by F10 (comment/like INSERT gated on post visibility) and extended by `00006/F` (the new comment UPDATE policy re-checks post visibility, so an edit can't relocate a comment onto a hidden post).
 - **July 14 audit gaps** — **closed in `00006`** (applied + verified on the live DB 2026-07-15; see `DATABASE.md`). That migration: makes `community_invites` metadata immutable to clients (decline moves to `decline_invite`, so an invitee can no longer rewrite `community_id` and `accept_invite` elsewhere); requires membership for community post INSERT/UPDATE; adds the missing owner UPDATE policies for posts and comments; adds a WITH CHECK to the avatar Storage UPDATE mirroring the INSERT path/extension/MIME checks; binds comment notifications to the referenced comment's real post; enforces `comments.parent_id` same-post/non-self integrity via trigger; and restricts targeted-invite acceptance to `pending` only (no rejoin after removal).
 - **Private image exposure** — `post-images` is currently a public bucket. Post RLS does not protect an uploaded image URL, including an image attached to an invite-only-community post. Move community-content images behind authorized delivery before representing them as private.
+- **Pre-launch reserve endpoint is unauthenticated by design** — `reserve()`, `username_available()`, and `rate_limit_hit()` are reachable by anyone (the funnel runs before signup). Abuse is bounded by unique email/username (incl. case-insensitive, 00012), DB `CHECK`s, trigger sanitization, and a **DB-backed per-IP rate limit** with **server-fixed** limits (`rate_limit_hit(action, key)` — the caller can't choose max/window/bucket; the key is md5-hashed; 00012). This is **defense-in-depth for the funnel path only** — it cannot protect the directly-callable `/auth/v1/signup`. Supabase Auth's built-in rate limits + a captcha are the real control; add a captcha before a large public push (`TODO.md`).
+- **Reservation emails are admin-only** — email is PII in `auth.users`, unreadable by any client. `00011`'s `admin_reservation_list()` (SECURITY DEFINER, guarded by `is_admin()`) is the **only** way emails reach a client, and only for allowlisted admins. The `admin_users` table is RLS-locked (no policies); the dashboard route group + the RPCs both check `is_admin`, and the guard fails closed. Adding an admin is a manual `insert into admin_users` (privilege grant — do it deliberately).
 - **Legal placeholders** — `lib/legal/config.ts` contact/entity fields are not real; policy copy needs counsel review (not a code vuln, but a compliance gap).
 - **Moderator role** is dormant (no assignment path) by design — see `DECISIONS.md` D9.
 

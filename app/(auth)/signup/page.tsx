@@ -72,9 +72,9 @@ export default function SignupPage() {
             label="Password"
             placeholder="••••••••"
             required
-            minLength={6}
+            minLength={8}
             autoComplete="new-password"
-            hint="At least 6 characters."
+            hint="8+ characters, with an uppercase letter and a number."
           />
           <label className="flex cursor-pointer items-start gap-3 text-sm text-muted-foreground">
             <input

@@ -22,6 +22,9 @@ export default async function ProtectedLayout({
     getUnreadCount(authUser.id),
   ]);
   if (!profile) redirect("/login");
+  // Reserved (pre-launch) accounts can't use the app yet — hold them in the
+  // limited welcome area. RLS is the real enforcement; this is the UX layer.
+  if (profile.access_level === "reserved") redirect("/welcome");
 
   return (
     <div className="min-h-dvh bg-background text-foreground">

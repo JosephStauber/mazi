@@ -10,11 +10,28 @@ export type Page<T> = {
 /** A page of profiles plus which of them the current user follows. */
 export type UserPage = Page<ProfileListItem> & { followedIds: string[] };
 
+export type AccessLevel = "reserved" | "full";
+
 export type Profile = {
   id: string;
   username: string;
   bio: string | null;
   avatar_url: string | null;
+  created_at: string;
+  /** Pre-launch tier. `reserved` accounts can edit their profile but can't use the app. */
+  access_level: AccessLevel;
+};
+
+/**
+ * Pre-launch username reservation: onboarding survey answers + referral graph,
+ * 1:1 with a `reserved` profile. Email is never here — it lives in auth.users.
+ */
+export type Reservation = {
+  profile_id: string;
+  reasons: string[];
+  daily_social_minutes: number | null;
+  referral_code: string;
+  referred_by: string | null;
   created_at: string;
 };
 
