@@ -179,7 +179,7 @@ function UsernameStatus({
       cls: "text-muted-foreground",
     },
     checking: { text: "Checking availability…", cls: "text-muted-foreground" },
-    available: { text: `@${username} is yours to claim.`, cls: "text-accent" },
+    available: { text: `@${username} is yours to claim.`, cls: "text-foreground" },
     taken: { text: "That username is already reserved.", cls: "text-danger" },
     error: {
       text: "Couldn't check availability — try again.",
