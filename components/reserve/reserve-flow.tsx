@@ -189,8 +189,8 @@ export function ReserveFlow({ referredBy }: { referredBy?: string }) {
 
           {step === 5 && (
             <Step
-              title="Free while we're building"
-              subtitle="Mazi stays free through the testing period. A paid tier comes later — early members help shape it."
+              title="Free while we're testing"
+              subtitle="Mazi is free for everyone during the testing period — then it's $4.99/month. Reserve now and you're first in."
             >
               <PricingCards />
               <Nav onNext={next} onBack={back} nextLabel="Reserve my spot →" />

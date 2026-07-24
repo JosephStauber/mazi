@@ -74,29 +74,20 @@ export function reclaimedMinutes(dailyMinutes: number): {
   };
 }
 
-/** Placeholder pricing — swap real tiers/prices in before launch. */
+/** Pricing — Mazi is a paid app; free only during the testing period. */
 export const PRICING = {
   testingBanner: "Free for everyone during the testing period.",
-  tiers: [
-    {
-      name: "Free",
-      price: "$0",
-      cadence: "forever",
-      blurb: "The whole app, chronological and private.",
-      features: ["Chronological feeds", "Small communities", "No ads, ever"],
-      highlight: false,
-      placeholder: false,
-    },
-    {
-      name: "Mazi+",
-      price: "$TBD",
-      cadence: "/mo after launch",
-      blurb: "Support the project, unlock extras.",
-      features: ["Everything in Free", "Larger communities", "Early features"],
-      highlight: true,
-      placeholder: true,
-    },
-  ],
+  plan: {
+    name: "Mazi",
+    price: "$4.99",
+    cadence: "/month after launch",
+    blurb: "The whole app — chronological, private, no ads.",
+    features: [
+      "Chronological feeds",
+      "Small communities",
+      "No ads, no tracking, ever",
+    ],
+  },
   /** Referral promise surfaced in the funnel + invite panel. */
-  referral: "Invite a friend and earn a free week of Mazi+ — for every friend who joins.",
+  referral: "Invite a friend and earn a free week of Mazi — for every friend who joins.",
 } as const;
