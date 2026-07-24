@@ -18,6 +18,9 @@ function fallbackProfileFromAuthUser(user: User): Profile {
     bio: null,
     avatar_url: null,
     created_at: new Date().toISOString(),
+    // A missing profile row is a pathological "trigger never ran" case; default
+    // to full access so we never lock an existing user out of their own app.
+    access_level: "full",
   };
 }
 

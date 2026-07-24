@@ -1,6 +1,10 @@
 import Link from "next/link";
+import { isReservationMode } from "@/lib/reserve/config";
 
 export default function LandingPage() {
+  const reserving = isReservationMode();
+  const primaryHref = reserving ? "/reserve" : "/signup";
+
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
@@ -16,10 +20,10 @@ export default function LandingPage() {
               Log in
             </Link>
             <Link
-              href="/signup"
+              href={primaryHref}
               className="inline-flex h-9 items-center rounded-[var(--radius-md)] bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90"
             >
-              Sign up
+              {reserving ? "Reserve" : "Sign up"}
             </Link>
           </div>
         </div>
@@ -55,10 +59,10 @@ export default function LandingPage() {
             style={{ animationDelay: "180ms" }}
           >
             <Link
-              href="/signup"
+              href={primaryHref}
               className="inline-flex h-12 w-full items-center justify-center rounded-[var(--radius-md)] bg-accent px-7 text-base font-semibold text-accent-foreground shadow-[var(--shadow-md)] transition-all duration-150 ease-spring hover:opacity-90 active:scale-[0.98] sm:w-auto"
             >
-              Get started
+              {reserving ? "Reserve your username" : "Get started"}
             </Link>
             <Link
               href="/login"

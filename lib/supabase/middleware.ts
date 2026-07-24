@@ -1,8 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isReservationMode } from "@/lib/reserve/config";
 
-const PUBLIC_ROUTES = ["/", "/login", "/signup"];
-const PUBLIC_PREFIXES = ["/legal"];
+const PUBLIC_ROUTES = ["/", "/login", "/signup", "/reserve"];
+const PUBLIC_PREFIXES = ["/legal", "/auth"];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -33,6 +34,14 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+
+  // Pre-launch: open signup is closed — the public front door is the funnel.
+  // Login stays open so existing testers can still get in.
+  if (isReservationMode() && pathname === "/signup") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/reserve";
+    return NextResponse.redirect(url);
+  }
 
   const isPublic =
     PUBLIC_ROUTES.includes(pathname) ||
