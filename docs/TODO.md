@@ -27,7 +27,9 @@ Priority buckets: **Now** (do next) · **Next** (soon) · **Later** (someday) ·
 - [ ] **Community moderator management (make the `moderator` role usable).** `moderator` exists in the schema and access rules (post/comment delete, `canModerate` UI) but **nothing can assign it** — intentional (D9). To ship: a creator-only `communities:setMemberRole` mutation (member ↔ moderator, never creator), promote/demote/remove controls in `components/community/community-tabs.tsx`, optionally notify the promoted user. Revisit whether mods can remove other mods.
 - [ ] **Invite link expiry + revocation.** `communityInvites.expiresAt` exists and is honoured but never set. Let creators pick an expiry and revoke links.
 - [ ] **Block / mute users.** Needs a `blocks` table, filtering in feeds/search/notifications (in the Convex queries), and UI. Privacy-relevant — design carefully.
-- [ ] **Content reporting flow (DSA notice-and-action).** Report UI on posts/comments, a `reports` table, reviewer tooling.
+- [ ] **Content reporting flow (DSA notice-and-action).** Report UI on posts/comments, a `reports` table, a reviewer queue in the admin panel (actions write to `adminActions`; suspension already exists).
+- [ ] **Admin panel: next slices.** Admin delete of posts/comments + community takedown/ownership transfer (audited); a Launch page for `setSignupMode` + promote batch with a remaining-count (and read the mode from `appConfig` instead of `NEXT_PUBLIC_LAUNCH_MODE`); revoke-admin from the UI (granting stays CLI-only); aggregate health stats from counters rather than table scans.
+- [ ] **Suspension: legal copy.** Mention suspension, the shown statement of reasons, and audit-log retention (rows survive account erasure, keyed by a username snapshot) in `/legal/privacy` + terms. `legal.contactEmail` is shown on `/suspended` for appeals.
 - [ ] **Following feed cap.** `feed:following` merges at most 2000 followed authors' streams. Fine for small communities; revisit (fan-out-on-write timeline table) if follow counts grow large.
 
 ## Later

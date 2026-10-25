@@ -17,6 +17,16 @@ The running memory of the project. **Every meaningful change gets an entry**, ne
 
 ## Entries
 
+## 2026-10-24 — Admin panel foundation: nav, audit log, Users page with suspend
+**By:** Claude (agent)
+**Summary:** The admin area now has a tab nav (Users · Reservations · Audit log; `/admin` → `/admin/users`), an append-only audit log, and a Users page (live list, All/Suspended filter, handle-prefix search, suspend with a user-facing reason, restore). Suspension is enforced in `requireViewer`, so every app function fails closed for a suspended account; it keeps data export and lands on a new `/suspended` page showing the reason.
+**Backend:** `isAdmin`/`requireAdmin`/`isSuspended`/`requireAccountOwner` moved/added in `convex/lib/access.ts`. New `admin:users`, `searchUsers`, `suspendUser`, `unsuspendUser`, `auditLog`; `grant` and `setSignupMode` now write audit rows too. `account:mySuspension` (new); `exportMyData` allows suspended accounts. Erasure keeps audit rows but unsets their profile links. Schema: `profiles.suspendedAt?`/`suspendedReason?` + `by_suspendedAt`, new `adminActions` table — all optional/new, **no migration needed**.
+**Frontend:** `components/admin/{admin-nav,user-admin,audit-log}.tsx`, `app/(admin)/admin/{page,users,audit}`, `app/suspended/page.tsx` + `components/auth/suspended-notice.tsx`; protected/reserved layouts redirect suspended users; `AppShell` redirects live; new `app/(protected)/error.tsx` keeps the shell mounted so that live redirect works when queries start throwing.
+**Changed:** `convex/{admin,account,schema}.ts`, `convex/lib/{access,accounts,returns}.ts`, `lib/validators/admin.ts`, the files above, docs (SECURITY, DATABASE).
+**Why:** User request — first slice of building out the admin panel.
+**Verify:** `tsc`, `eslint`, `next build` clean. Exercised on a local anonymous Convex backend: CLI `setSignupMode`/`grant` audited; admin suspends via the UI (live list update, Suspended filter, `@ADM` search, audit entry with reason); suspended user signs in → `/suspended` with reason, `/settings` redirects, data export works in the browser; `posts:create` / `feed:following` / `admin:users` denied for them; self-suspend refused; restore → back to `/home`; suspension while on `/home` redirects live.
+**Follow-ups:** set `legal.contactEmail` (the suspension page shows it for appeals); mention suspension + audit-record retention in the privacy policy / terms; reports queue, content takedown, launch-control page (TODO).
+
 ## 2026-10-24 — Vercel Web Analytics (cookieless, redacted)
 **By:** Claude (agent)
 **Summary:** The Vercel dashboard showed no traffic because `@vercel/analytics` was never installed. Added it, wrapped in `PrivateAnalytics`, whose `beforeSend` drops query strings/hashes (reset/invite tokens, search terms, referral codes) and collapses `/profile/*`, `/communities/*` (except `join`) and `/post/*` to route placeholders. Recorded as D15 (amends D4's analytics clause); disclosed in the privacy policy, cookie notice, and subprocessor list.

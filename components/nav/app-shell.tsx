@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { DesktopNav } from "@/components/nav/desktop-nav";
@@ -14,6 +15,12 @@ function Shell({ children }: { children: ReactNode }) {
   const viewer = useViewer();
   // Live: the badge updates the moment a notification arrives.
   const unreadCount = useQuery(api.notifications.unreadCount) ?? 0;
+  // Live: a suspension mid-session moves the user out of the app at once.
+  const suspension = useQuery(api.account.mySuspension);
+  const router = useRouter();
+  useEffect(() => {
+    if (suspension) router.replace("/suspended");
+  }, [suspension, router]);
 
   return (
     <div className="min-h-dvh bg-background text-foreground">

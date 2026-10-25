@@ -204,6 +204,24 @@ export async function deleteAllDataForAuthUser(ctx: MutationCtx, authUserId: str
     .unique();
   if (admin) await ctx.db.delete(admin._id);
 
+  // Audit rows outlive the account (moderation record); only the link goes.
+  const audited = [
+    ...(await ctx.db
+      .query("adminActions")
+      .withIndex("by_actor", (q) => q.eq("actorId", me))
+      .collect()),
+    ...(await ctx.db
+      .query("adminActions")
+      .withIndex("by_target", (q) => q.eq("targetId", me))
+      .collect()),
+  ];
+  for (const a of audited) {
+    await ctx.db.patch(a._id, {
+      ...(a.actorId === me ? { actorId: undefined } : {}),
+      ...(a.targetId === me ? { targetId: undefined } : {}),
+    });
+  }
+
   if (profile.avatarId) await ctx.storage.delete(profile.avatarId);
   await ctx.db.delete(me);
 }

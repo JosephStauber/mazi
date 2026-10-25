@@ -28,7 +28,27 @@ export async function getViewer(ctx: QueryCtx): Promise<Viewer | null> {
     .unique();
 }
 
+/** Suspended by an admin (`admin:suspendUser`). Locks the account out of the app. */
+export function isSuspended(p: Doc<"profiles">) {
+  return p.suspendedAt !== undefined;
+}
+
+/**
+ * Signed in and not suspended. A suspended account keeps only what
+ * `requireAccountOwner` allows (its own data rights), so every other function
+ * fails closed for it without checking suspension itself.
+ */
 export async function requireViewer(ctx: QueryCtx): Promise<Viewer> {
+  const viewer = await requireAccountOwner(ctx);
+  if (isSuspended(viewer)) deny("Your account is suspended");
+  return viewer;
+}
+
+/**
+ * Signed in, suspended or not. Only for the account holder's own data rights
+ * (export, suspension notice) — never for using the app.
+ */
+export async function requireAccountOwner(ctx: QueryCtx): Promise<Viewer> {
   const viewer = await getViewer(ctx);
   if (!viewer) deny("Not authenticated");
   return viewer;
@@ -50,7 +70,25 @@ export async function requireFullAccess(ctx: QueryCtx): Promise<Viewer> {
 /** Like `requireFullAccess`, but null instead of throwing (for list queries). */
 export async function getFullAccessViewer(ctx: QueryCtx): Promise<Viewer | null> {
   const viewer = await getViewer(ctx);
-  return viewer?.accessLevel === "full" ? viewer : null;
+  return viewer?.accessLevel === "full" && !isSuspended(viewer) ? viewer : null;
+}
+
+/** On the admin allowlist (`adminUsers`, seeded with `admin:grant`). */
+export async function isAdmin(ctx: QueryCtx, profileId: Id<"profiles">) {
+  const row = await ctx.db
+    .query("adminUsers")
+    .withIndex("by_profile", (q) => q.eq("profileId", profileId))
+    .unique();
+  return row !== null;
+}
+
+/** Signed-in admin. Every public function in `admin.ts` starts with this. */
+export async function requireAdmin(ctx: QueryCtx): Promise<Viewer> {
+  const viewer = await getViewer(ctx);
+  if (!viewer || isSuspended(viewer) || !(await isAdmin(ctx, viewer._id))) {
+    deny("Not authorized");
+  }
+  return viewer;
 }
 
 export async function getMembership(

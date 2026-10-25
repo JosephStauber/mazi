@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireViewer } from "./lib/access";
+import { getViewer, requireAccountOwner } from "./lib/access";
 import { iso } from "./lib/dto";
 import { authComponent } from "./auth";
 import { legal } from "../lib/legal/config";
@@ -14,7 +14,8 @@ export const exportMyData = query({
   args: {},
   returns: v.any(),
   handler: async (ctx) => {
-    const me = await requireViewer(ctx);
+    // Suspended accounts keep this: data rights outlast a suspension.
+    const me = await requireAccountOwner(ctx);
     const user = await authComponent.getAuthUser(ctx);
 
     const strip = <T extends { _id: string; _creationTime: number }>(rows: T[]) =>
@@ -64,5 +65,16 @@ export const exportMyData = query({
       invites_received: strip(invitesReceived),
       communities_created: strip(communitiesCreated),
     };
+  },
+});
+
+/** The caller's suspension notice (statement of reasons), or null if not suspended. */
+export const mySuspension = query({
+  args: {},
+  returns: v.union(v.null(), v.object({ reason: v.union(v.string(), v.null()), since: v.string() })),
+  handler: async (ctx) => {
+    const me = await getViewer(ctx);
+    if (me?.suspendedAt === undefined) return null;
+    return { reason: me.suspendedReason ?? null, since: iso(me.suspendedAt) };
   },
 });

@@ -30,6 +30,13 @@ The browser talks to Convex directly (WebSocket) with the user's Better Auth–i
 - Client-supplied `signupMeta` (username + survey + referral) is parsed defensively (`convex/lib/signup.ts`): canonical reasons only, minutes clamped, bounded referral code, self/unknown referrals dropped. It never influences the tier.
 - Reserved accounts can read/update only their own profile, avatar, and reservation. Everything else goes through `requireFullAccess` and throws for them.
 
+## Suspension
+
+- An admin can suspend an account (`admin:suspendUser`, reason required and shown to the user). `profiles.suspendedAt` set ⇒ `requireViewer` (and so `requireFullAccess`) throws and `getFullAccessViewer` returns null, so **every** app function fails closed without checking suspension itself.
+- A suspended account keeps only its data rights: `account:exportMyData` and `account:mySuspension` use `requireAccountOwner` / `getViewer`. Deleting the account goes through Better Auth (unaffected). Don't use `requireAccountOwner` for anything else.
+- Admins can't be suspended (revoke admin first); suspending yourself is refused. Their existing posts stay visible — removal is a separate (future) action.
+- Layouts redirect suspended users to `/suspended`; `AppShell` watches `account:mySuspension` live, and `app/(protected)/error.tsx` keeps the shell mounted so that redirect still fires when queries start throwing mid-session.
+
 ## Access rules by area
 
 | Area | Read | Write |
@@ -43,7 +50,7 @@ The browser talks to Convex directly (WebSocket) with the user's Better Auth–i
 | Invites | `inviteByToken`: pending + unexpired only, public community fields | create (targeted or link): creator/moderator; accept: link = reusable, targeted = invitee only and only from `pending`; decline: targeted invitee, pending only |
 | Notifications | recipient only | **no client writes at all** — created server-side inside the action that caused them (`convex/lib/notify.ts`); mentions only notify users who can see the post. mark read: recipient only |
 | Reservations | `reservations:mine`: owner only (referral count = confirmed signups) | trigger-written only |
-| Admin | `admin:*` queries require the `adminUsers` allowlist and throw otherwise; `reservationList` is the **only** path that returns emails | `admin:grant` / `admin:setSignupMode` are internal (CLI / dashboard only) |
+| Admin | every public `admin:*` function starts with `requireAdmin` (allowlist + not suspended, in `access.ts`); `reservationList` is the **only** path that returns emails — the Users page doesn't | `suspendUser` / `unsuspendUser`: admin, written to `adminActions` in the same mutation. `admin:grant` / `admin:setSignupMode` are internal (CLI / dashboard only) and audited with no actor. No function edits or deletes audit rows |
 
 ## Files
 
