@@ -55,7 +55,7 @@ The browser talks to Convex directly (WebSocket) with the user's Better Auth–i
 ## Secrets & configuration
 
 - **Convex deployment env** (server-only): `SITE_URL`, `BETTER_AUTH_SECRET`, `RESEND_API_KEY`, `RESEND_FROM`, optional `GOOGLE_*` / `APPLE_*`. Never put these in `.env.local` or the repo.
-- **`.env.local`** (public): `CONVEX_DEPLOYMENT`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_LAUNCH_MODE`.
+- **`.env.local`** (public): `CONVEX_DEPLOYMENT`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL` (optional, derived), `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_LAUNCH_MODE`.
 - Without `RESEND_API_KEY`, auth emails are **logged** to the Convex logs instead of sent (dev fallback) — never run production like that.
 
 ## Input validation
