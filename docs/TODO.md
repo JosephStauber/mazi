@@ -10,7 +10,7 @@ Priority buckets: **Now** (do next) · **Next** (soon) · **Later** (someday) ·
 
 ## Now
 
-- [ ] **Create your own Convex project and deployment.** Development so far ran on a local *anonymous* Convex backend. Run `npx convex dev`, log in, create the project — it rewrites `CONVEX_DEPLOYMENT` / `NEXT_PUBLIC_CONVEX_URL` in `.env.local`. Then set `NEXT_PUBLIC_CONVEX_SITE_URL` and the deployment env vars from `docs/SETUP.md` (`SITE_URL`, `BETTER_AUTH_SECRET`). Do the same for production (`npx convex deploy`) with production values.
+- [ ] **Create your own Convex project and deployment.** Development so far ran on a local *anonymous* Convex backend. Run `npx convex dev`, log in, create the project — it rewrites `CONVEX_DEPLOYMENT` / `NEXT_PUBLIC_CONVEX_URL` in `.env.local`. Then set the deployment env vars from `docs/SETUP.md` (`SITE_URL`, `BETTER_AUTH_SECRET`). Do the same for production (`npx convex deploy`) with production values.
 - [ ] **Configure Resend.** Verify a sending domain in Resend; set `RESEND_API_KEY` and `RESEND_FROM` on each Convex deployment. Until then, confirmation/reset links only appear in the Convex logs (fine for dev, unusable for real users).
 - [ ] **Google / Apple sign-in (when ready).** Create the OAuth apps, set `GOOGLE_CLIENT_ID/SECRET` and/or `APPLE_CLIENT_ID/SECRET` (+ `APPLE_APP_BUNDLE_IDENTIFIER`) on the deployment. Redirect URIs: `<SITE_URL>/api/auth/callback/{google,apple}`. The buttons appear automatically. Untested end-to-end so far (no credentials).
 - [ ] **Seed the first admin.** `npx convex run admin:grant '{"username":"<your handle>"}'` (add `--prod` for production) after you have an account. Privilege grant — do it deliberately.

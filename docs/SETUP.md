@@ -25,7 +25,7 @@ The first run asks you to log in and pick or create a project, then writes `CONV
 Add the rest of `.env.local` yourself (all public):
 
 ```
-NEXT_PUBLIC_CONVEX_SITE_URL=https://<deployment>.convex.site   # same name as the .convex.cloud URL; local backend: http://127.0.0.1:3211
+# NEXT_PUBLIC_CONVEX_SITE_URL=https://<deployment>.convex.site  # optional — derived from NEXT_PUBLIC_CONVEX_URL if unset
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 # NEXT_PUBLIC_LAUNCH_MODE=open   # only after launch (see ONBOARDING.md)
@@ -48,7 +48,7 @@ npx convex env set BETTER_AUTH_SECRET=<random 32+ bytes, e.g. openssl rand -base
 | `SITE_URL` | yes | The app's origin. Used for auth redirects, trusted origins, and the passkey relying-party id. Must match the URL you browse. |
 | `BETTER_AUTH_SECRET` | yes | Signs sessions/tokens. Different per deployment; never commit it. |
 | `RESEND_API_KEY` | for real email | Without it, confirmation/reset links are **logged** in `npx convex dev` instead of sent. |
-| `RESEND_FROM` | for real email | e.g. `Mazi <hello@yourdomain.com>` on a domain verified in Resend. Default `onboarding@resend.dev` only delivers to your own Resend address. |
+| `RESEND_FROM` | for real email | `Mazi <hello@mazi.social>` (`mazi.social` must be verified in Resend). Set it quoted: `npx convex env set --prod "RESEND_FROM=Mazi <hello@mazi.social>"`. Default `onboarding@resend.dev` only delivers to your own Resend address. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional | Turns on "Continue with Google". Redirect URI: `<SITE_URL>/api/auth/callback/google`. |
 | `APPLE_CLIENT_ID` / `APPLE_CLIENT_SECRET` (+ `APPLE_APP_BUNDLE_IDENTIFIER`) | optional | Turns on "Continue with Apple". Redirect URI: `<SITE_URL>/api/auth/callback/apple`. |
 
@@ -71,6 +71,13 @@ npx convex run admin:setSignupMode '{"mode":"open"}'
 ```bash
 npx convex run admin:grant '{"username":"your_handle"}'
 ```
+
+## Deploying (Vercel)
+
+`vercel.json` sets the build command: when `CONVEX_DEPLOY_KEY` is present it runs `npx convex deploy --cmd 'npm run build'` (pushes the Convex functions, then builds Next.js with `NEXT_PUBLIC_CONVEX_URL` injected); otherwise it's a plain `npm run build`.
+
+- **Production:** add `CONVEX_DEPLOY_KEY` (Convex dashboard → prod deployment → Settings → Deploy Keys) to Vercel's **Production** environment only, and set `NEXT_PUBLIC_APP_URL` to the production URL. On the Convex **prod** deployment set `SITE_URL` (the production URL), `BETTER_AUTH_SECRET`, `RESEND_API_KEY`, `RESEND_FROM`.
+- **Preview:** no deploy key, so previews never touch production. They build against the **dev** deployment via `NEXT_PUBLIC_CONVEX_URL` in Vercel's Preview environment. Auth on previews is limited — the dev deployment's `SITE_URL` is localhost, so sign-in redirects point there.
 
 ## Verify a change before you're done
 
