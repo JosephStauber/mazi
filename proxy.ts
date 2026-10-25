@@ -2,7 +2,18 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 import { isReservationMode } from "@/lib/reserve/config";
 
-const PUBLIC_ROUTES = ["/", "/login", "/signup", "/reserve", "/forgot-password", "/reset-password"];
+const PUBLIC_ROUTES = [
+  "/",
+  "/login",
+  "/signup",
+  "/reserve",
+  "/forgot-password",
+  "/reset-password",
+  // Metadata routes for crawlers and link previews.
+  "/robots.txt",
+  "/sitemap.xml",
+  "/opengraph-image",
+];
 const PUBLIC_PREFIXES = ["/legal", "/api/auth"];
 
 /**

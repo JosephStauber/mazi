@@ -14,6 +14,7 @@ import {
 export const metadata: Metadata = {
   title: `Privacy Policy — ${legal.appName}`,
   description: `How ${legal.appName} collects, uses, and protects your personal data.`,
+  alternates: { canonical: "/legal/privacy" },
 };
 
 export default function PrivacyPolicy() {

@@ -17,6 +17,14 @@ The running memory of the project. **Every meaningful change gets an entry**, ne
 
 ## Entries
 
+## 2026-10-25 — SEO basics: robots, sitemap, canonicals, link previews, JSON-LD
+**By:** Claude (agent)
+**Summary:** `/robots.txt` and `/sitemap.xml` didn't exist, and the proxy was redirecting both to `/login`, so crawlers got a login page. Added `app/robots.ts` + `app/sitemap.ts` (public pages only: `/`, `/reserve` or `/signup` by launch mode, `/legal/*`) and let them, plus `/opengraph-image`, through `proxy.ts`. Root metadata now has `metadataBase`, a fuller title/description, Open Graph + Twitter tags; each public page sets its own canonical (`/reserve?ref=…` folds into `/reserve`). New `app/opengraph-image.tsx` (1200×630 brand card). Landing page emits Organization + WebSite JSON-LD so "Mazi" resolves to this site.
+**Changed:** `lib/site.ts` (new — canonical origin `https://www.mazi.social`, title, description), `app/{robots,sitemap,opengraph-image}.ts(x)` (new), `app/layout.tsx`, `app/page.tsx`, `app/reserve/page.tsx`, `app/legal/*/page.tsx`, `proxy.ts`, `lib/legal/config.ts` (fallback origin → www).
+**Why:** Mazi ranks #2 for "mazi social"; the site was unreadable to crawlers and gave Google no canonical or brand signals.
+**Verify:** `tsc`, `eslint` (0 errors), `next build` clean. Against `next start`: robots/sitemap/OG image return 200 without a session (`/home` still redirects); `/`, `/reserve?ref=abc`, `/legal/terms` emit the right canonical, og:*, twitter:* and image tags; JSON-LD present on `/`; OG image checked visually.
+**Follow-ups:** Vercel apex redirect 307 → permanent, Search Console + sitemap submit, `sameAs` (TODO, Now); landing FAQ, auth-page noindex, OG font, landing caching (TODO, Later).
+
 ## 2026-10-25 — Merge the admin panel batch into main (after the High-findings fixes)
 **By:** Claude (agent)
 **Summary:** The admin panel batch (commit `4483711`, entry below) was pushed to the `claude/admin-panel-ideas-f8df36` branch after its PR (#10) had already merged, so it never reached `main`. Merged it on top of the High review findings (#12). Conflicts resolved by keeping #12's precomputed, paginated reservation stats/list behind the batch's owner-only checks (`requireOwner`, `OwnerOnly`); `crons.ts` keeps both jobs (upload sweep + suspension expiry); docs keep both sides.
