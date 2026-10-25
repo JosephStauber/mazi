@@ -1,25 +1,39 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { PlusIcon } from "@/components/ui/icon";
-import { createCommunity } from "@/lib/actions/community";
+import { errorMessage } from "@/lib/utils/errors";
 
 export function CreateCommunityForm() {
   const { toast } = useToast();
+  const router = useRouter();
+  const createCommunity = useMutation(api.communities.create);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(formData: FormData) {
     setLoading(true);
-    // Resolves only on error; success redirects server-side.
-    const result = await createCommunity(formData);
-    setLoading(false);
-    if (result?.error) toast(result.error, "error");
+    try {
+      const { slug } = await createCommunity({
+        name: (formData.get("name") as string) ?? "",
+        description: (formData.get("description") as string) || undefined,
+        privacyType: formData.get("privacy_type") === "invite_only" ? "invite_only" : "public",
+      });
+      setOpen(false);
+      router.push(`/communities/${slug}`);
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

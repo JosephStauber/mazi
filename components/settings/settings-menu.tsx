@@ -2,16 +2,16 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useConvex, useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
-import {
-  logout,
-  sendPasswordResetEmail,
-  deleteAccount,
-} from "@/lib/actions/auth";
-import { exportMyData } from "@/lib/actions/account";
+import { authClient, authErrorMessage } from "@/lib/auth-client";
+import { errorMessage } from "@/lib/utils/errors";
 import { PreferenceToggle } from "@/components/settings/preference-toggle";
+import { PasskeySettings } from "@/components/settings/passkey-settings";
 
 function Section({
   title,
@@ -37,49 +37,68 @@ function Section({
   );
 }
 
-export function SettingsMenu({ email }: { email: string | null }) {
+export function SettingsMenu() {
   const { toast } = useToast();
+  const convex = useConvex();
+  const email = useQuery(api.auth.myEmail);
   const [pwLoading, setPwLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   async function handlePasswordReset() {
+    if (!email) return;
     setPwLoading(true);
-    const result = await sendPasswordResetEmail();
+    const { error } = await authClient.requestPasswordReset({
+      email,
+      redirectTo: "/reset-password",
+    });
     setPwLoading(false);
-    if (result?.error) toast(result.error, "error");
+    if (error) toast(authErrorMessage(error), "error");
     else toast("Check your email for a link to reset your password.", "success");
   }
 
   async function handleExport() {
     setExporting(true);
-    const result = await exportMyData();
-    setExporting(false);
-    if (result?.error || !result?.data) {
-      toast(result?.error ?? "Couldn't export your data", "error");
-      return;
+    try {
+      const data = await convex.query(api.account.exportMyData);
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mazi-data-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast("Your data is downloading", "success");
+    } catch (e) {
+      toast(errorMessage(e, "Couldn't export your data"), "error");
+    } finally {
+      setExporting(false);
     }
-    const blob = new Blob([JSON.stringify(result.data, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `mazi-data-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    toast("Your data is downloading", "success");
   }
 
   async function handleDelete() {
     setDeleting(true);
-    const result = await deleteAccount();
-    if (result?.error) {
+    setDeleteError(null);
+    // Deleting the auth user fires the Convex trigger that erases every row
+    // and file the account owns (convex/lib/accounts.ts), in one transaction.
+    const { error } = await authClient.deleteUser(
+      deletePassword ? { password: deletePassword } : {}
+    );
+    if (error) {
       setDeleting(false);
-      toast(result.error, "error");
+      setDeleteError(
+        authErrorMessage(
+          error,
+          "Couldn't delete your account. Enter your password, or log in again and retry."
+        )
+      );
       return;
     }
     window.location.href = "/";
@@ -118,7 +137,7 @@ export function SettingsMenu({ email }: { email: string | null }) {
 
       <Section
         title="Account"
-        description="Sign-in email and password are managed through Supabase Auth."
+        description="Your sign-in email, password, and passkeys."
       >
         <div className="space-y-2 py-3">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -128,8 +147,7 @@ export function SettingsMenu({ email }: { email: string | null }) {
             {email ?? "—"}
           </p>
           <p className="text-xs text-muted-foreground">
-            To change your email, contact support or use your provider’s account
-            settings if you signed in with OAuth (when enabled).
+            To change your email, contact support.
           </p>
         </div>
         <div className="space-y-2 py-3">
@@ -142,11 +160,13 @@ export function SettingsMenu({ email }: { email: string | null }) {
             variant="outline"
             size="sm"
             loading={pwLoading}
+            disabled={!email}
             onClick={handlePasswordReset}
           >
             Send password reset email
           </Button>
         </div>
+        <PasskeySettings />
       </Section>
 
       <Section
@@ -210,7 +230,7 @@ export function SettingsMenu({ email }: { email: string | null }) {
             variant="outline"
             size="sm"
             onClick={async () => {
-              await logout();
+              await authClient.signOut();
               window.location.href = "/login";
             }}
           >
@@ -297,6 +317,19 @@ export function SettingsMenu({ email }: { email: string | null }) {
         title="Delete your account?"
         description="This permanently removes your profile, posts, comments, likes, follows, and uploaded images. This cannot be undone."
       >
+        <div className="mt-4 space-y-3">
+          <Input
+            id="delete-password"
+            type="password"
+            label="Password"
+            placeholder="••••••••"
+            autoComplete="current-password"
+            hint="Required unless you signed in within the last day."
+            value={deletePassword}
+            onChange={(e) => setDeletePassword(e.target.value)}
+          />
+          {deleteError && <p className="text-sm text-danger">{deleteError}</p>}
+        </div>
         <div className="mt-5 flex justify-end gap-2">
           <Button
             variant="ghost"

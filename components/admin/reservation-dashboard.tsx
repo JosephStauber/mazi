@@ -6,7 +6,11 @@ import {
   RESERVATION_LIST_LIMIT,
   SURVEY_OPTIONS,
 } from "@/lib/reserve/config";
-import type { ReservationStats, ReservationRow } from "@/lib/queries/admin";
+import type { FunctionReturnType } from "convex/server";
+import type { api } from "@/convex/_generated/api";
+
+type ReservationStats = FunctionReturnType<typeof api.admin.reservationStats>;
+type ReservationRow = FunctionReturnType<typeof api.admin.reservationList>[number];
 
 const reasonLabel = (id: string) =>
   SURVEY_OPTIONS.find((o) => o.id === id)?.label ?? id;

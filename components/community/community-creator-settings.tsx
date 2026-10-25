@@ -2,10 +2,13 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { deleteCommunity, updateCommunity } from "@/lib/actions/community";
+import { errorMessage } from "@/lib/utils/errors";
 
 interface CommunityCreatorSettingsProps {
   community: {
@@ -20,6 +23,9 @@ export function CommunityCreatorSettings({
   community,
 }: CommunityCreatorSettingsProps) {
   const router = useRouter();
+  const updateCommunity = useMutation(api.communities.update);
+  const deleteCommunity = useMutation(api.communities.remove);
+  const communityId = community.id as Id<"communities">;
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
   const [editing, setEditing] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
@@ -30,15 +36,19 @@ export function CommunityCreatorSettings({
   async function handleEditSubmit(formData: FormData) {
     setEditLoading(true);
     setFormError(null);
-    formData.set("community_id", community.id);
-    const result = await updateCommunity(formData);
-    if (result?.error) {
-      setFormError(result.error);
-    } else {
+    try {
+      await updateCommunity({
+        communityId,
+        name: (formData.get("name") as string) ?? "",
+        description: (formData.get("description") as string) || undefined,
+        privacyType: formData.get("privacy_type") === "invite_only" ? "invite_only" : "public",
+      });
       setEditing(false);
-      router.refresh();
+    } catch (e) {
+      setFormError(errorMessage(e));
+    } finally {
+      setEditLoading(false);
     }
-    setEditLoading(false);
   }
 
   function openDeleteDialog() {
@@ -53,16 +63,15 @@ export function CommunityCreatorSettings({
   async function handleConfirmDelete() {
     setDeleteLoading(true);
     setDialogError(null);
-    const result = await deleteCommunity(community.id);
-    if (result?.error) {
-      setDialogError(result.error);
+    try {
+      await deleteCommunity({ communityId });
+      closeDeleteDialog();
+      router.push("/communities");
+    } catch (e) {
+      setDialogError(errorMessage(e));
+    } finally {
       setDeleteLoading(false);
-      return;
     }
-    closeDeleteDialog();
-    router.push("/communities");
-    router.refresh();
-    setDeleteLoading(false);
   }
 
   return (
@@ -95,7 +104,6 @@ export function CommunityCreatorSettings({
         </div>
       ) : (
         <form action={handleEditSubmit} className="space-y-3">
-          <input type="hidden" name="community_id" value={community.id} />
           <Input
             id="edit-community-name"
             name="name"

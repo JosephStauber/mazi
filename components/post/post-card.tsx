@@ -3,6 +3,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import { memo, useEffect, useRef, useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -18,9 +21,9 @@ import {
   TrashIcon,
 } from "@/components/ui/icon";
 import type { PostWithAuthor } from "@/lib/types/database";
-import { toggleLike, deletePost, editPost } from "@/lib/actions/post";
 import { formatRelative } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
+import { errorMessage } from "@/lib/utils/errors";
 
 interface PostCardProps {
   post: PostWithAuthor;
@@ -30,12 +33,23 @@ interface PostCardProps {
 
 function PostCardImpl({ post, currentUserId, canModerate }: PostCardProps) {
   const { toast } = useToast();
-  const [liked, setLiked] = useState(post.liked_by_user);
-  const [likesCount, setLikesCount] = useState(post.likes_count);
+  const toggleLike = useMutation(api.posts.toggleLike);
+  const editPost = useMutation(api.posts.edit);
+  const deletePost = useMutation(api.posts.remove);
+  const postId = post.id as Id<"posts">;
+
+  // Live values come from the query; `optimisticLike` only bridges the gap
+  // while a like mutation is in flight.
+  const [optimisticLike, setOptimisticLike] = useState<boolean | null>(null);
+  const liked = optimisticLike ?? post.liked_by_user;
+  const likesCount =
+    optimisticLike === null || optimisticLike === post.liked_by_user
+      ? post.likes_count
+      : post.likes_count + (optimisticLike ? 1 : -1);
   const [likeAnim, setLikeAnim] = useState(false);
   const [burst, setBurst] = useState(false);
 
-  const [content, setContent] = useState(post.content);
+  const content = post.content;
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(post.content);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -60,22 +74,14 @@ function PostCardImpl({ post, currentUserId, canModerate }: PostCardProps) {
   }, [menuOpen]);
 
   function applyLike(next: boolean) {
-    setLiked(next);
-    setLikesCount((c) => c + (next ? 1 : -1));
+    setOptimisticLike(next);
     if (next) {
       setLikeAnim(true);
       setTimeout(() => setLikeAnim(false), 420);
     }
-    const rollback = () => {
-      setLiked(!next);
-      setLikesCount((c) => c + (next ? -1 : 1));
-      toast("Couldn't update like", "error");
-    };
-    toggleLike(post.id)
-      .then((res) => {
-        if (res?.error) rollback();
-      })
-      .catch(rollback);
+    toggleLike({ postId })
+      .catch(() => toast("Couldn't update like", "error"))
+      .finally(() => setOptimisticLike(null));
   }
 
   function handleLike() {
@@ -126,24 +132,27 @@ function PostCardImpl({ post, currentUserId, canModerate }: PostCardProps) {
     const trimmed = editValue.trim();
     if (!trimmed) return;
     setSavingEdit(true);
-    const result = await editPost(post.id, trimmed);
-    setSavingEdit(false);
-    if (result?.error) {
-      toast(result.error, "error");
+    try {
+      await editPost({ postId, content: trimmed });
+    } catch (e) {
+      toast(errorMessage(e), "error");
       return;
+    } finally {
+      setSavingEdit(false);
     }
-    setContent(trimmed);
     setEditing(false);
     toast("Post updated", "success");
   }
 
   async function confirmDelete() {
     setDeleting(true);
-    const result = await deletePost(post.id);
-    setDeleting(false);
-    if (result?.error) {
-      toast(result.error, "error");
+    try {
+      await deletePost({ postId });
+    } catch (e) {
+      toast(errorMessage(e), "error");
       return;
+    } finally {
+      setDeleting(false);
     }
     setConfirmOpen(false);
     setDeleted(true);
@@ -272,6 +281,9 @@ function PostCardImpl({ post, currentUserId, canModerate }: PostCardProps) {
               alt={content.slice(0, 80) || "Post image"}
               width={1080}
               height={1080}
+              // Served by /api/images, which checks access with the viewer's
+              // cookies — the optimizer can't fetch it on their behalf.
+              unoptimized
               className="h-auto w-full object-cover"
             />
             {burst && (

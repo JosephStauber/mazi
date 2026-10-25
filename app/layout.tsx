@@ -4,6 +4,8 @@ import "./globals.css";
 import { ThemeProvider, themeScript } from "@/components/ui/theme";
 import { ToastProvider } from "@/components/ui/toast";
 import { CookieNotice } from "@/components/legal/cookie-notice";
+import { ConvexClientProvider } from "@/components/providers/convex-client-provider";
+import { getToken } from "@/lib/auth-server";
 
 const displaySerif = Fraunces({
   variable: "--font-display",
@@ -23,11 +25,14 @@ export const metadata: Metadata = {
     "A minimalist, privacy-first social platform. No algorithm. No ads. Just people.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Seeds the Convex client with the session's JWT so the first render is
+  // already authenticated (no signed-out flash).
+  const token = await getToken();
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -36,12 +41,14 @@ export default function RootLayout({
       <body
         className={`${bodySans.variable} ${displaySerif.variable} font-sans antialiased`}
       >
-        <ThemeProvider>
-          <ToastProvider>
-            {children}
-            <CookieNotice />
-          </ToastProvider>
-        </ThemeProvider>
+        <ConvexClientProvider initialToken={token}>
+          <ThemeProvider>
+            <ToastProvider>
+              {children}
+              <CookieNotice />
+            </ToastProvider>
+          </ThemeProvider>
+        </ConvexClientProvider>
       </body>
     </html>
   );

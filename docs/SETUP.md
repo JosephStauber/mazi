@@ -1,11 +1,12 @@
 # SETUP
 
-Local development setup. Config values here are **placeholders** — put real values only in `.env.local` (gitignored), never in the repo.
+Local development setup. Values here are **placeholders** — public URLs go in `.env.local` (gitignored); secrets go on the Convex deployment, never in the repo.
 
 ## Prerequisites
 
 - Node.js 20+ and npm
-- A Supabase project (free tier is fine) — [supabase.com](https://supabase.com)
+- A Convex account — [convex.dev](https://convex.dev) (free tier is fine). Optional for a quick local try: `CONVEX_AGENT_MODE=anonymous npx convex dev` runs a local backend with no login.
+- A Resend account — [resend.com](https://resend.com) — for real emails. Not needed to develop locally.
 
 ## 1. Install
 
@@ -13,64 +14,77 @@ Local development setup. Config values here are **placeholders** — put real va
 npm install
 ```
 
-## 2. Configure environment
-
-Copy the example and fill in your project's values:
+## 2. Start the backend
 
 ```bash
-cp .env.example .env.local
+npx convex dev
 ```
 
+The first run asks you to log in and pick or create a project, then writes `CONVEX_DEPLOYMENT` and `NEXT_PUBLIC_CONVEX_URL` to `.env.local`. Leave it running: it pushes `convex/` on every save and tails the function logs.
+
+Add the rest of `.env.local` yourself (all public):
+
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
+NEXT_PUBLIC_CONVEX_SITE_URL=https://<deployment>.convex.site   # same name as the .convex.cloud URL; local backend: http://127.0.0.1:3211
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+# NEXT_PUBLIC_LAUNCH_MODE=open   # only after launch (see ONBOARDING.md)
 ```
 
-Find both values in the Supabase dashboard → **Project Settings → API**. Use the **anon/public** key — **never** the `service_role` key (it bypasses RLS and must not touch this app). `.env.local` is gitignored; keep real keys out of commits, docs, and screenshots.
+## 3. Set backend environment variables
 
-## 3. Apply database migrations
+These live on the Convex deployment (dashboard → Settings → Environment Variables, or the CLI). Use the `NAME=value` form:
 
-There's no Supabase CLI here — run migrations **by hand, in order**, in the dashboard **SQL Editor** (paste each file's contents and run):
-
-```
-supabase/migrations/00001_schema.sql
-supabase/migrations/00002_mentions_and_replies.sql
-supabase/migrations/00003_account_deletion.sql
-supabase/migrations/00004_security_hardening.sql
-supabase/migrations/00005_review_fixes.sql
-supabase/migrations/00006_rls_integrity_fixes.sql
-supabase/migrations/00007_pagination_indexes.sql
-supabase/migrations/00008_username_check_and_grants.sql
-supabase/migrations/00009_mention_notification_post_binding.sql
+```bash
+npx convex env set SITE_URL=http://localhost:3000
 ```
 
-They're idempotent, so re-running is safe. See [`DATABASE.md`](DATABASE.md) for what each adds. `00001` also creates the `avatars` and `post-images` storage buckets and their policies.
+```bash
+npx convex env set BETTER_AUTH_SECRET=<random 32+ bytes, e.g. openssl rand -base64 32>
+```
 
-## 4. Configure Auth
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `SITE_URL` | yes | The app's origin. Used for auth redirects, trusted origins, and the passkey relying-party id. Must match the URL you browse. |
+| `BETTER_AUTH_SECRET` | yes | Signs sessions/tokens. Different per deployment; never commit it. |
+| `RESEND_API_KEY` | for real email | Without it, confirmation/reset links are **logged** in `npx convex dev` instead of sent. |
+| `RESEND_FROM` | for real email | e.g. `Mazi <hello@yourdomain.com>` on a domain verified in Resend. Default `onboarding@resend.dev` only delivers to your own Resend address. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional | Turns on "Continue with Google". Redirect URI: `<SITE_URL>/api/auth/callback/google`. |
+| `APPLE_CLIENT_ID` / `APPLE_CLIENT_SECRET` (+ `APPLE_APP_BUNDLE_IDENTIFIER`) | optional | Turns on "Continue with Apple". Redirect URI: `<SITE_URL>/api/auth/callback/apple`. |
 
-- **Authentication → Providers**: enable **Email**.
-- For dev convenience: **Authentication → Settings** → optionally turn **off** "Enable email confirmations" so signups log in immediately.
-- Password reset / invite links use `NEXT_PUBLIC_APP_URL` — keep it matching your dev/prod origin.
+The login/signup pages ask the backend which OAuth providers are configured and only show those buttons.
 
-## 5. Run
+## 4. Run
 
 ```bash
 npm run dev            # http://localhost:3000
 ```
 
+Sign up at `/reserve` (reservation mode, the default) or `/signup` (open mode). Copy the confirmation link from the `npx convex dev` logs if Resend isn't configured.
+
+Useful one-offs:
+
+```bash
+npx convex run admin:setSignupMode '{"mode":"open"}'
+```
+
+```bash
+npx convex run admin:grant '{"username":"your_handle"}'
+```
+
 ## Verify a change before you're done
 
 ```bash
-npx tsc --noEmit       # types
-npx eslint .           # lint (2 known pre-existing errors in theme.tsx / preference-toggle.tsx)
+npx tsc --noEmit       # types, including convex/
+npx eslint .           # lint
 npx next build         # full build
 ```
 
-You can't log in as a real user from the agent environment, so verification leans on the above plus a user spot-check in the running app.
+Exercise the change in the running app too — local login works.
 
 ## Notes
 
-- Auth middleware is `proxy.ts` (Next.js 16 naming), not `middleware.ts`.
-- After schema changes, keep `lib/types/database.ts` in sync.
+- Route guard is `proxy.ts` (Next.js 16 naming), not `middleware.ts`.
+- `convex/_generated/` and `convex/betterAuth/_generated/` are codegen output (committed, regenerated by `npx convex dev`).
+- After changing the Better Auth config, regenerate the auth schema (see `DATABASE.md`).
 - New to the codebase? Read [`ARCHITECTURE.md`](ARCHITECTURE.md), then [`../CLAUDE.md`](../CLAUDE.md) if you're an agent.

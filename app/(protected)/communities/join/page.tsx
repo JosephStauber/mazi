@@ -1,55 +1,46 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { CommunitiesIcon } from "@/components/ui/icon";
-import { resolveInviteToken, acceptInvite } from "@/lib/actions/community";
+import { errorMessage } from "@/lib/utils/errors";
 
-export default function JoinByTokenPage() {
+function JoinByToken() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const token = searchParams.get("token");
 
-  // No token is knowable at first render — derive it instead of setting state in
-  // an effect (avoids react-hooks/set-state-in-effect). Only load if we have one.
-  const [loading, setLoading] = useState(!!token);
+  const invite = useQuery(api.communities.inviteByToken, token ? { token } : "skip");
+  const acceptInvite = useMutation(api.communities.acceptInvite);
   const [accepting, setAccepting] = useState(false);
-  const [error, setError] = useState<string | null>(
-    token ? null : "No invite token provided"
-  );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [invite, setInvite] = useState<any>(null);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!token) return;
-    let active = true;
-    resolveInviteToken(token).then((result) => {
-      if (!active) return;
-      if (result.error) setError(result.error);
-      else setInvite(result.invite);
-      setLoading(false);
-    });
-    return () => {
-      active = false;
-    };
-  }, [token]);
+  const error =
+    acceptError ??
+    (!token
+      ? "No invite token provided"
+      : invite === null
+        ? "Invite not found or already used"
+        : null);
 
   async function handleAccept() {
     if (!invite) return;
     setAccepting(true);
-    const result = await acceptInvite(invite.id);
-    if (result?.error) {
-      setError(result.error);
+    try {
+      const { slug } = await acceptInvite({ inviteId: invite.id });
+      router.push(`/communities/${slug}`);
+    } catch (e) {
+      setAcceptError(errorMessage(e));
       setAccepting(false);
-    } else {
-      router.push(`/communities/${invite.communities?.slug || ""}`);
     }
   }
 
-  if (loading) {
+  if (token && invite === undefined) {
     return (
       <div className="flex justify-center py-20">
         <Spinner />
@@ -57,7 +48,7 @@ export default function JoinByTokenPage() {
     );
   }
 
-  if (error) {
+  if (error || !invite) {
     return (
       <div className="px-6 py-20 text-center">
         <h2 className="text-base font-semibold text-foreground">
@@ -87,12 +78,12 @@ export default function JoinByTokenPage() {
             You&apos;re invited to join
           </p>
           <h2 className="mt-1 text-xl font-bold tracking-tight text-foreground">
-            {invite?.communities?.name}
+            {invite.community.name}
           </h2>
         </div>
-        {invite?.communities?.description && (
+        {invite.community.description && (
           <p className="text-sm leading-relaxed text-muted-foreground">
-            {invite.communities.description}
+            {invite.community.description}
           </p>
         )}
         <Button onClick={handleAccept} loading={accepting} fullWidth>
@@ -100,5 +91,19 @@ export default function JoinByTokenPage() {
         </Button>
       </Card>
     </div>
+  );
+}
+
+export default function JoinByTokenPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex justify-center py-20">
+          <Spinner />
+        </div>
+      }
+    >
+      <JoinByToken />
+    </Suspense>
   );
 }

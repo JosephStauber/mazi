@@ -1,16 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
-import { markAllNotificationsRead } from "@/lib/actions/notification";
 
 export function MarkAllReadButton() {
+  const markAllRead = useMutation(api.notifications.markAllRead);
   const [loading, setLoading] = useState(false);
 
   async function handleClick() {
     setLoading(true);
-    await markAllNotificationsRead();
-    setLoading(false);
+    try {
+      await markAllRead();
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

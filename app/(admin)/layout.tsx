@@ -1,21 +1,21 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/queries/profiles";
-import { getIsAdmin } from "@/lib/queries/admin";
+import { api } from "@/convex/_generated/api";
+import { fetchAuthQuery } from "@/lib/auth-server";
 
 /**
  * Admin-only area (reservation dashboard). Auth is required, and the admin
- * allowlist (is_admin RPC) is the gate — a non-admin gets a 404, so the area's
- * existence isn't advertised. The RPCs it calls are independently admin-guarded.
+ * allowlist is the gate — a non-admin gets a 404, so the area's existence
+ * isn't advertised. The Convex queries it calls are independently admin-guarded.
  */
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const profile = await getCurrentUser();
+  const profile = await fetchAuthQuery(api.profiles.me);
   if (!profile) redirect("/login");
-  if (!(await getIsAdmin())) notFound();
+  if (!(await fetchAuthQuery(api.admin.amIAdmin))) notFound();
 
   return (
     <div className="min-h-dvh bg-background text-foreground">

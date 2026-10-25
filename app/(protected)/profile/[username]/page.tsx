@@ -1,50 +1,46 @@
+"use client";
+
 import Link from "next/link";
-import { redirect, notFound } from "next/navigation";
-import {
-  getCurrentUser,
-  getProfile,
-  getFollowerCount,
-  getFollowingCount,
-  isFollowing,
-  getUserCommunities,
-} from "@/lib/queries/profiles";
-import { getPostsByUser, getPostCountByUser } from "@/lib/queries/posts";
-import { loadMoreProfilePosts } from "@/lib/actions/pagination";
+import { useParams } from "next/navigation";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { useViewer } from "@/components/providers/viewer";
 import { Avatar } from "@/components/ui/avatar";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FeedSkeleton } from "@/components/ui/skeleton";
 import { FollowButton } from "@/components/profile/follow-button";
 import { ProfileTabs } from "@/components/profile/profile-tabs";
 import { PageHeader } from "@/components/nav/page-header";
-import { SettingsIcon } from "@/components/ui/icon";
+import { SettingsIcon, UserPlusIcon } from "@/components/ui/icon";
 import { formatJoinDate } from "@/lib/utils/date";
 
-export default async function ProfilePage({
-  params,
-}: {
-  params: Promise<{ username: string }>;
-}) {
-  const { username } = await params;
-  // The viewer and the profile being viewed are independent reads.
-  const [currentUser, profile] = await Promise.all([
-    getCurrentUser(),
-    getProfile(username),
-  ]);
-  if (!currentUser) redirect("/login");
-  if (!profile) notFound();
+export default function ProfilePage() {
+  const { username } = useParams<{ username: string }>();
+  const currentUser = useViewer();
+  const data = useQuery(api.profiles.byUsername, { username });
 
-  const isOwnProfile = currentUser.id === profile.id;
+  if (data === undefined) {
+    return (
+      <div>
+        <PageHeader title={decodeURIComponent(username)} back />
+        <FeedSkeleton count={3} />
+      </div>
+    );
+  }
+  if (data === null) {
+    return (
+      <div>
+        <PageHeader title="Profile" back />
+        <EmptyState
+          icon={<UserPlusIcon size={24} />}
+          title="This account doesn't exist"
+          description="Try searching for another username."
+        />
+      </div>
+    );
+  }
 
-  const [followers, following, userFollows, postsPage, postsCount, communities] =
-    await Promise.all([
-      getFollowerCount(profile.id),
-      getFollowingCount(profile.id),
-      isOwnProfile
-        ? Promise.resolve(false)
-        : isFollowing(currentUser.id, profile.id),
-      getPostsByUser(profile.id, currentUser.id),
-      getPostCountByUser(profile.id),
-      getUserCommunities(profile.id),
-    ]);
-
+  const { profile, followers, following, posts_count: postsCount, is_own: isOwnProfile } = data;
   const base = `/profile/${profile.username}`;
 
   return (
@@ -79,7 +75,7 @@ export default async function ProfilePage({
           ) : (
             <FollowButton
               targetUserId={profile.id}
-              isFollowing={userFollows}
+              isFollowing={data.is_following}
               size="md"
             />
           )}
@@ -112,33 +108,25 @@ export default async function ProfilePage({
           </div>
         </div>
 
-        {communities.length > 0 && (
+        {data.communities.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
-            {communities.map((cm) => {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const c = cm.communities as any;
-              const community = Array.isArray(c) ? c[0] : c;
-              if (!community) return null;
-              return (
-                <Link
-                  key={cm.community_id}
-                  href={`/communities/${community.slug}`}
-                  className="rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  {community.name}
-                </Link>
-              );
-            })}
+            {data.communities.map((community) => (
+              <Link
+                key={community.id}
+                href={`/communities/${community.slug}`}
+                className="rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                {community.name}
+              </Link>
+            ))}
           </div>
         )}
       </div>
 
       <div className="mt-6">
         <ProfileTabs
-          initialPosts={postsPage.items}
-          postsCursor={postsPage.nextCursor}
+          userId={profile.id}
           postsCount={postsCount}
-          loadMore={loadMoreProfilePosts.bind(null, profile.id)}
           currentUserId={currentUser.id}
           isOwnProfile={isOwnProfile}
         />

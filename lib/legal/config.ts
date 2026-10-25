@@ -40,10 +40,16 @@ export const legal = {
    */
   subprocessors: [
     {
-      name: "Supabase",
+      name: "Convex",
       purpose:
-        "Authentication, database hosting, and file storage (your account, posts, and images)",
-      site: "https://supabase.com/privacy",
+        "Database hosting, authentication data, and file storage (your account, posts, and images)",
+      site: "https://www.convex.dev/legal/privacy",
+    },
+    {
+      name: "Resend",
+      purpose:
+        "Sending account emails (email confirmation and password reset) to your address",
+      site: "https://resend.com/legal/privacy-policy",
     },
   ],
 } as const;

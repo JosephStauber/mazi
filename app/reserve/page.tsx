@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/queries/profiles";
+import { api } from "@/convex/_generated/api";
+import { fetchAuthQuery } from "@/lib/auth-server";
 import { ReserveFlow } from "@/components/reserve/reserve-flow";
 
 export const metadata: Metadata = {
@@ -15,7 +16,7 @@ export default async function ReservePage({
   searchParams: Promise<{ ref?: string }>;
 }) {
   // Logged-in users don't belong in the funnel — send them where they go.
-  const profile = await getCurrentUser();
+  const profile = await fetchAuthQuery(api.profiles.me);
   if (profile) {
     redirect(profile.access_level === "reserved" ? "/welcome" : "/home");
   }

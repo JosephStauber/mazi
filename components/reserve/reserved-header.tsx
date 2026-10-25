@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { logout } from "@/lib/actions/auth";
+import { authClient } from "@/lib/auth-client";
 
 export function ReservedHeader() {
   return (
@@ -12,7 +12,7 @@ export function ReservedHeader() {
       <button
         type="button"
         onClick={async () => {
-          await logout();
+          await authClient.signOut();
           window.location.href = "/";
         }}
         className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"

@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useConvex } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { legal } from "@/lib/legal/config";
-import { checkUsername } from "@/lib/actions/reserve";
 
 type Status = "idle" | "invalid" | "checking" | "available" | "taken" | "error";
 
@@ -33,6 +34,7 @@ export function ReservePanel({
   loading: boolean;
   error: string | null;
 }) {
+  const convex = useConvex();
   // Only the async result is stored; idle/invalid/checking are derived at
   // render (keeps setState out of the effect body).
   const [result, setResult] = useState<{
@@ -52,7 +54,9 @@ export function ReservePanel({
     let active = true;
     const t = setTimeout(async () => {
       try {
-        const { available } = await checkUsername(name);
+        const available = await convex.query(api.profiles.usernameAvailable, {
+          username: name,
+        });
         if (active) setResult({ name, available });
       } catch {
         if (active) setResult({ name, available: false, error: true });
@@ -62,7 +66,7 @@ export function ReservePanel({
       active = false;
       clearTimeout(t);
     };
-  }, [name, validFormat]);
+  }, [name, validFormat, convex]);
 
   const status: Status =
     name.length === 0

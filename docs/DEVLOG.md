@@ -8,7 +8,7 @@ The running memory of the project. **Every meaningful change gets an entry**, ne
 ## YYYY-MM-DD — Short title
 **By:** <agent name / human>
 **Summary:** One or two sentences on what changed.
-**Changed:** key files / `supabase/migrations/000NN_*.sql`
+**Changed:** key files
 **Why:** The reason / trigger.
 **Follow-ups:** anything left open (also add to docs/TODO.md), or "none".
 ```
@@ -16,6 +16,16 @@ The running memory of the project. **Every meaningful change gets an entry**, ne
 ---
 
 ## Entries
+
+## 2026-10-24 — Supabase → Convex + Better Auth + Resend (fresh start)
+**By:** Claude (agent)
+**Summary:** Replaced Supabase (Postgres + Auth + Storage + RLS) with Convex (data, functions, storage, live queries), Better Auth (email + password with required verification, passkeys, Google/Apple scaffolded), and Resend (auth email). The UI is now reactive. The new backend started empty — no data migrated (the Supabase project was paused; user chose a fresh start).
+**Backend (`convex/`):** schema for all former tables (`schema.ts`) with chronological indexes and denormalized counters; one module per area; every Supabase RLS rule re-implemented in `lib/access.ts` and called by every public function (post visibility F5, membership-gated community posts 00006/B, comment visibility F10 + same-post parent 00006/G, owner edits with re-checks 00006/F, targeted invites only from `pending` 00006/E, multi-use links F13, reserved-tier gate 00010/00012, creator-only community admin). Notifications are written server-side only (closes the F11/00006/00009 spoofing class). Better Auth local-install component (`betterAuth/`, generated schema incl. `passkey` + `signupMeta`); `user.onCreate` trigger replaces `handle_new_user` (tier from `appConfig.signupMode`, sanitized survey/referral, username de-dup); `user.onDelete` erases everything (replaces `delete_user`). Password policy enforced in a Better Auth hook; DB-backed auth rate limits. Uploads are validated against stored metadata (`files.claimImage`); **post images are served via `/api/images/[postId]`**, which re-checks visibility as the viewer — closes the "public `post-images` bucket" gap. Return validators on public functions.
+**Frontend:** pages that read data are client components on `useQuery` / `usePaginatedList` (convex-helpers pagination over merged index streams for feeds); mutations via `useMutation` with small optimistic overrides. New: `/forgot-password`, `/reset-password`, passkey sign-in + settings, OAuth buttons (shown only when configured), password-confirmed account deletion. `proxy.ts` now checks the Better Auth cookie; server layouts gate by tier via `fetchAuthQuery`. Removed `lib/queries`, `lib/actions`, `lib/supabase`, `app/auth/callback`, `supabase/migrations`, Supabase + nanoid deps.
+**Changed:** `convex/**` (new), `lib/auth-client.ts`, `lib/auth-server.ts`, `lib/hooks/use-paginated-list.ts`, `lib/utils/{errors,upload}.ts`, `lib/types/database.ts`, `lib/validators/{comment,post}.ts`, `components/providers/*`, `components/nav/app-shell.tsx`, `components/auth/social-buttons.tsx`, `components/settings/passkey-settings.tsx`, `components/profile/follow-list-page.tsx`, every data-reading page/component, `app/api/{auth,images}/**`, `proxy.ts`, `next.config.ts`, `eslint.config.mjs`, `lib/legal/config.ts` (subprocessors), docs.
+**Why:** User request — move to Convex, Better Auth, Resend; go reactive.
+**Verify:** `npx tsc --noEmit`, `npx eslint .` (0 errors), `npx next build` all clean. Exercised on a local anonymous Convex backend in the browser: reserve funnel signup → trigger wrote reserved profile + reservation → confirmation link (logged; no Resend key) → signed in at `/welcome`; reserved user redirected off `/home`; `admin:setSignupMode` open + promote; post, like, comment (live counts), create community, admin dashboard, account deletion → all app tables empty. **Not exercised:** image upload, passkeys, OAuth, password-reset email, data export, invites, moderation (see TODO).
+**Follow-ups:** create a real Convex project + set env, configure Resend, seed admin, OAuth credentials, captcha, batched deletion, orphaned-upload cleanup (all in TODO).
 
 ## 2026-07-23 — Codex review triage: access-tier hardening (00012) + reserve/dashboard fixes
 **By:** Claude (agent)

@@ -2,67 +2,35 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Avatar } from "@/components/ui/avatar";
 import { Tabs } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SearchIcon, CommunitiesIcon, CloseIcon } from "@/components/ui/icon";
-import { createClient } from "@/lib/supabase/client";
-import type { Profile, Community } from "@/lib/types/database";
-
-/** Remove LIKE metacharacters so user input cannot widen ILIKE patterns. */
-function sanitizeSearchTerm(q: string): string {
-  return q.replace(/[%_\\]/g, "").trim();
-}
 
 type Tab = "all" | "people" | "communities";
 
 export function SearchView() {
   const [query, setQuery] = useState("");
-  const [users, setUsers] = useState<Profile[]>([]);
-  const [communities, setCommunities] = useState<Community[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [term, setTerm] = useState("");
   const [tab, setTab] = useState<Tab>("all");
   const inputRef = useRef<HTMLInputElement>(null);
-  const reqId = useRef(0);
 
+  // Debounce keystrokes into the search term (state is set in the timer, not
+  // synchronously in the effect body).
   useEffect(() => {
-    const id = ++reqId.current;
-    const safe = sanitizeSearchTerm(query);
-
-    // State updates run inside the timers, not synchronously in the effect body
-    // (avoids react-hooks/set-state-in-effect). Clear near-instantly; debounce
-    // the network search.
-    if (safe.length < 2) {
-      const clear = setTimeout(() => {
-        if (id !== reqId.current) return;
-        setUsers([]);
-        setCommunities([]);
-        setSearched(false);
-        setLoading(false);
-      }, 0);
-      return () => clearTimeout(clear);
-    }
-
-    const timer = setTimeout(async () => {
-      if (id !== reqId.current) return;
-      setLoading(true);
-      const supabase = createClient();
-      const pattern = `%${safe}%`;
-      const [usersRes, communitiesRes] = await Promise.all([
-        supabase.from("profiles").select("*").ilike("username", pattern).limit(20),
-        supabase.from("communities").select("*").ilike("name", pattern).limit(20),
-      ]);
-      if (id !== reqId.current) return; // stale response
-      setUsers(usersRes.data ?? []);
-      setCommunities(communitiesRes.data ?? []);
-      setSearched(true);
-      setLoading(false);
-    }, 250);
-
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => setTerm(query.trim()), 250);
+    return () => clearTimeout(t);
   }, [query]);
+
+  const active = term.length >= 2;
+  const results = useQuery(api.search.all, active ? { q: term } : "skip");
+  const users = results?.users ?? [];
+  const communities = results?.communities ?? [];
+  const loading = active && results === undefined;
+  const searched = active && results !== undefined;
 
   const showPeople = tab === "all" || tab === "people";
   const showCommunities = tab === "all" || tab === "communities";

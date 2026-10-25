@@ -2,6 +2,9 @@
 
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -10,14 +13,13 @@ import { RichText } from "@/components/ui/rich-text";
 import { MentionTextarea } from "@/components/ui/mention-textarea";
 import { useToast } from "@/components/ui/toast";
 import { CommentIcon, MoreIcon, EditIcon, TrashIcon } from "@/components/ui/icon";
-import type { CommentWithAuthor, Page, Profile } from "@/lib/types/database";
-import { createComment, deleteComment, editComment } from "@/lib/actions/comment";
+import { Spinner } from "@/components/ui/spinner";
+import type { CommentWithAuthor, Profile } from "@/lib/types/database";
+import { usePaginatedList } from "@/lib/hooks/use-paginated-list";
 import { formatRelative } from "@/lib/utils/date";
+import { errorMessage } from "@/lib/utils/errors";
 
 interface CommentListProps {
-  comments: CommentWithAuthor[];
-  initialCursor: string | null;
-  loadMore: (cursor: string) => Promise<Page<CommentWithAuthor>>;
   postId: string;
   currentUser: Profile;
   canModerate?: boolean;
@@ -37,37 +39,24 @@ function rootIdOf(
 }
 
 export function CommentList({
-  comments: initial,
-  initialCursor,
-  loadMore,
   postId,
   currentUser,
   canModerate,
 }: CommentListProps) {
   const { toast } = useToast();
-  const [comments, setComments] = useState(initial);
-  const [cursor, setCursor] = useState<string | null>(initialCursor);
-  const [loadingMore, setLoadingMore] = useState(false);
+  // Live: comments from other people appear as they're posted. Pages are by
+  // root comment and carry their replies (convex/comments.ts).
+  const list = usePaginatedList(
+    api.comments.list,
+    { postId: postId as Id<"posts"> },
+    10
+  );
+  const comments = list.items;
+  const createComment = useMutation(api.comments.create);
+  const deleteComment = useMutation(api.comments.remove);
   const [value, setValue] = useState("");
   const [loading, setLoading] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
-
-  // Comments paginate by root (oldest first); a page also carries its roots'
-  // replies. Merge fetched pages into the same list the optimistic writes use.
-  async function fetchMore() {
-    if (loadingMore || cursor === null) return;
-    setLoadingMore(true);
-    try {
-      const page = await loadMore(cursor);
-      setComments((prev) => {
-        const seen = new Set(prev.map((c) => c.id));
-        return [...prev, ...page.items.filter((c) => !seen.has(c.id))];
-      });
-      setCursor(page.nextCursor);
-    } finally {
-      setLoadingMore(false);
-    }
-  }
 
   const { roots, repliesByRoot } = useMemo(() => {
     const byId = new Map(comments.map((c) => [c.id, c]));
@@ -101,94 +90,37 @@ export function CommentList({
     const content = value.trim();
     if (!content) return;
     setLoading(true);
-
-    const optimistic: CommentWithAuthor = {
-      id: `temp-${Date.now()}`,
-      post_id: postId,
-      author_id: currentUser.id,
-      content,
-      parent_id: null,
-      created_at: new Date().toISOString(),
-      author: currentUser,
-    };
-    setComments((c) => [...c, optimistic]);
     setValue("");
     if (taRef.current) taRef.current.style.height = "auto";
-
-    const fd = new FormData();
-    fd.append("content", content);
-    fd.append("post_id", postId);
-    const result = await createComment(fd);
-    setLoading(false);
-
-    if (result?.error) {
-      setComments((c) => c.filter((x) => x.id !== optimistic.id));
+    try {
+      await createComment({ postId: postId as Id<"posts">, content });
+    } catch (e) {
       setValue(content);
-      toast(result.error, "error");
-    } else if (result && "comment" in result && result.comment) {
-      const persisted = result.comment;
-      setComments((c) =>
-        c.map((x) =>
-          x.id === optimistic.id
-            ? { ...x, id: persisted.id, created_at: persisted.created_at }
-            : x
-        )
-      );
+      toast(errorMessage(e), "error");
+    } finally {
+      setLoading(false);
     }
   }
 
   async function addReply(rootId: string, content: string): Promise<boolean> {
-    const optimistic: CommentWithAuthor = {
-      id: `temp-${Date.now()}`,
-      post_id: postId,
-      author_id: currentUser.id,
-      content,
-      parent_id: rootId,
-      created_at: new Date().toISOString(),
-      author: currentUser,
-    };
-    setComments((c) => [...c, optimistic]);
-
-    const fd = new FormData();
-    fd.append("content", content);
-    fd.append("post_id", postId);
-    fd.append("parent_id", rootId);
-    const result = await createComment(fd);
-
-    if (result?.error) {
-      setComments((c) => c.filter((x) => x.id !== optimistic.id));
-      toast(result.error, "error");
+    try {
+      await createComment({
+        postId: postId as Id<"posts">,
+        content,
+        parentId: rootId as Id<"comments">,
+      });
+      return true;
+    } catch (e) {
+      toast(errorMessage(e), "error");
       return false;
     }
-    if (result && "comment" in result && result.comment) {
-      const persisted = result.comment;
-      setComments((c) =>
-        c.map((x) =>
-          x.id === optimistic.id
-            ? { ...x, id: persisted.id, created_at: persisted.created_at }
-            : x
-        )
-      );
-    }
-    return true;
   }
 
   function onDelete(id: string) {
-    const prev = comments;
-    // Remove the comment and any of its replies.
-    setComments((c) => c.filter((x) => x.id !== id && x.parent_id !== id));
-    deleteComment(id).then((r) => {
-      if (r?.error) {
-        setComments(prev);
-        toast(r.error, "error");
-      } else {
-        toast("Comment deleted", "success");
-      }
-    });
-  }
-
-  function onEdited(id: string, content: string) {
-    setComments((c) => c.map((x) => (x.id === id ? { ...x, content } : x)));
+    deleteComment({ commentId: id as Id<"comments"> }).then(
+      () => toast("Comment deleted", "success"),
+      (e) => toast(errorMessage(e), "error")
+    );
   }
 
   return (
@@ -224,7 +156,11 @@ export function CommentList({
         </Button>
       </form>
 
-      {roots.length === 0 ? (
+      {list.firstLoad ? (
+        <div className="flex justify-center py-10 text-muted-foreground">
+          <Spinner />
+        </div>
+      ) : roots.length === 0 ? (
         <EmptyState
           icon={<CommentIcon size={24} />}
           title="No comments yet"
@@ -240,7 +176,6 @@ export function CommentList({
                 currentUser={currentUser}
                 canModerate={!!canModerate}
                 onDelete={onDelete}
-                onEdited={onEdited}
                 onReply={addReply}
               />
             </li>
@@ -248,13 +183,13 @@ export function CommentList({
         </ul>
       )}
 
-      {cursor !== null && (
+      {!list.firstLoad && !list.done && (
         <div className="flex justify-center py-4">
           <Button
             variant="ghost"
             size="sm"
-            loading={loadingMore}
-            onClick={fetchMore}
+            loading={list.loading}
+            onClick={list.loadMore}
           >
             Load more comments
           </Button>
@@ -270,7 +205,6 @@ function CommentThread({
   currentUser,
   canModerate,
   onDelete,
-  onEdited,
   onReply,
 }: {
   root: CommentWithAuthor;
@@ -278,7 +212,6 @@ function CommentThread({
   currentUser: Profile;
   canModerate: boolean;
   onDelete: (id: string) => void;
-  onEdited: (id: string, content: string) => void;
   onReply: (rootId: string, content: string) => Promise<boolean>;
 }) {
   const [replyOpen, setReplyOpen] = useState(false);
@@ -318,7 +251,6 @@ function CommentThread({
         canDelete={root.author_id === currentUser.id || canModerate}
         canEdit={root.author_id === currentUser.id}
         onDelete={() => onDelete(root.id)}
-        onEdited={(content) => onEdited(root.id, content)}
         onReply={() => openReply(root.author.username)}
       />
 
@@ -331,7 +263,6 @@ function CommentThread({
               canDelete={reply.author_id === currentUser.id || canModerate}
               canEdit={reply.author_id === currentUser.id}
               onDelete={() => onDelete(reply.id)}
-              onEdited={(content) => onEdited(reply.id, content)}
               onReply={() => openReply(reply.author.username)}
               compact
             />
@@ -390,7 +321,6 @@ function CommentRow({
   canDelete,
   canEdit,
   onDelete,
-  onEdited,
   onReply,
   compact,
 }: {
@@ -398,29 +328,28 @@ function CommentRow({
   canDelete: boolean;
   canEdit: boolean;
   onDelete: () => void;
-  onEdited: (content: string) => void;
   onReply: () => void;
   compact?: boolean;
 }) {
   const { toast } = useToast();
+  const editComment = useMutation(api.comments.edit);
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.content);
   const [saving, setSaving] = useState(false);
-  const isTemp = comment.id.startsWith("temp-");
 
   async function save() {
     const trimmed = draft.trim();
     if (!trimmed) return;
     setSaving(true);
-    const r = await editComment(comment.id, trimmed);
-    setSaving(false);
-    if (r?.error) {
-      toast(r.error, "error");
-      return;
+    try {
+      await editComment({ commentId: comment.id as Id<"comments">, content: trimmed });
+      setEditing(false);
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    } finally {
+      setSaving(false);
     }
-    onEdited(trimmed);
-    setEditing(false);
   }
 
   const avatarSize = compact ? "xs" : "sm";
@@ -445,7 +374,7 @@ function CommentRow({
           <span className="text-xs text-subtle">
             {formatRelative(comment.created_at)}
           </span>
-          {(canDelete || canEdit) && !editing && !isTemp && (
+          {(canDelete || canEdit) && !editing && (
             <div className="relative ml-auto">
               <IconButton
                 label="Comment options"
@@ -515,15 +444,13 @@ function CommentRow({
               text={comment.content}
               className="mt-0.5 text-[15px] leading-relaxed"
             />
-            {!isTemp && (
-              <button
-                type="button"
-                onClick={onReply}
-                className="mt-1 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
-              >
-                Reply
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={onReply}
+              className="mt-1 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Reply
+            </button>
           </>
         )}
       </div>

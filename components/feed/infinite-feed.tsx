@@ -1,30 +1,25 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { PostCard } from "@/components/post/post-card";
 import { Spinner } from "@/components/ui/spinner";
-import { useInfiniteList } from "@/lib/hooks/use-infinite-list";
-import type { Page, PostWithAuthor } from "@/lib/types/database";
+import { FeedSkeleton } from "@/components/ui/skeleton";
+import type { PaginatedList } from "@/lib/hooks/use-paginated-list";
+import type { PostWithAuthor } from "@/lib/types/database";
 
 interface InfiniteFeedProps {
-  initialPosts: PostWithAuthor[];
-  initialCursor: string | null;
+  feed: PaginatedList<PostWithAuthor>;
   currentUserId: string;
-  loadMore: (cursor: string) => Promise<Page<PostWithAuthor>>;
   canModerate?: boolean;
+  /** Rendered instead of the list when the feed has no posts. */
+  empty?: ReactNode;
 }
 
-export function InfiniteFeed({
-  initialPosts,
-  initialCursor,
-  currentUserId,
-  loadMore,
-  canModerate,
-}: InfiniteFeedProps) {
-  const { items: posts, loading, done, sentinelRef } = useInfiniteList({
-    initialItems: initialPosts,
-    initialCursor,
-    loadMore,
-  });
+export function InfiniteFeed({ feed, currentUserId, canModerate, empty }: InfiniteFeedProps) {
+  const { items: posts, firstLoad, loading, done, sentinelRef } = feed;
+
+  if (firstLoad) return <FeedSkeleton count={4} />;
+  if (posts.length === 0 && done && empty) return <>{empty}</>;
 
   return (
     <div>

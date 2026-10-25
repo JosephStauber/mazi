@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import { joinCommunity, leaveCommunity } from "@/lib/actions/community";
+import { errorMessage } from "@/lib/utils/errors";
 
 interface JoinLeaveButtonProps {
   communityId: string;
@@ -19,25 +22,27 @@ export function JoinLeaveButton({
   privacyType,
 }: JoinLeaveButtonProps) {
   const { toast } = useToast();
-  const [member, setMember] = useState(isMember);
+  const join = useMutation(api.communities.join);
+  const leave = useMutation(api.communities.leave);
+  // Optimistic while in flight; the live community query takes over after.
+  const [pending, setPending] = useState<boolean | null>(null);
   const [hovered, setHovered] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const member = pending ?? isMember;
 
   if (isCreator) return null;
 
   async function handleClick() {
     const next = !member;
-    setMember(next);
-    setLoading(true);
-    const result = next
-      ? await joinCommunity(communityId)
-      : await leaveCommunity(communityId);
-    setLoading(false);
-    if (result?.error) {
-      setMember(!next);
-      toast(result.error, "error");
-    } else {
+    const id = communityId as Id<"communities">;
+    setPending(next);
+    try {
+      if (next) await join({ communityId: id });
+      else await leave({ communityId: id });
       toast(next ? "Joined community" : "Left community", "success");
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    } finally {
+      setPending(null);
     }
   }
 
@@ -56,7 +61,7 @@ export function JoinLeaveButton({
       onClick={handleClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      loading={loading}
+      loading={pending !== null}
       className={member ? "min-w-[5.5rem]" : undefined}
     >
       {member ? (hovered ? "Leave" : "Joined") : "Join"}

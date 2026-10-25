@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -14,9 +17,8 @@ import {
   BellIcon,
 } from "@/components/ui/icon";
 import type { NotificationWithActor, NotificationType } from "@/lib/types/database";
-import { markNotificationRead } from "@/lib/actions/notification";
-import { acceptInvite, declineInvite } from "@/lib/actions/community";
 import { formatRelative } from "@/lib/utils/date";
+import { errorMessage } from "@/lib/utils/errors";
 
 interface NotificationItemProps {
   notification: NotificationWithActor;
@@ -58,28 +60,28 @@ const badge: Record<
 
 export function NotificationItem({ notification: n }: NotificationItemProps) {
   const { toast } = useToast();
+  const markRead = useMutation(api.notifications.markRead);
+  const acceptInvite = useMutation(api.communities.acceptInvite);
+  const declineInvite = useMutation(api.communities.declineInvite);
   const [handled, setHandled] = useState<null | "accepted" | "declined">(null);
   const [busy, setBusy] = useState(false);
 
   function handleRead() {
-    if (!n.read) markNotificationRead(n.id);
+    if (!n.read) markRead({ notificationId: n.id as Id<"notifications"> });
   }
 
   async function respond(action: "accept" | "decline") {
-    if (!n.community_id) return;
+    if (!n.pending_invite_id) return;
+    const inviteId = n.pending_invite_id as Id<"communityInvites">;
     setBusy(true);
-    const { data } = await getInviteForNotification(n);
-    if (!data) {
+    try {
+      if (action === "accept") await acceptInvite({ inviteId });
+      else await declineInvite({ inviteId });
+    } catch (e) {
+      toast(errorMessage(e), "error");
+      return;
+    } finally {
       setBusy(false);
-      toast("This invite is no longer available", "error");
-      return;
-    }
-    const r =
-      action === "accept" ? await acceptInvite(data.id) : await declineInvite(data.id);
-    setBusy(false);
-    if (r && typeof r === "object" && "error" in r && r.error) {
-      toast(r.error as string, "error");
-      return;
     }
     setHandled(action === "accept" ? "accepted" : "declined");
     toast(
@@ -139,7 +141,7 @@ export function NotificationItem({ notification: n }: NotificationItemProps) {
           </p>
         </Link>
 
-        {n.type === "community_invite" && !handled && (
+        {n.type === "community_invite" && n.pending_invite_id && !handled && (
           <div className="mt-2.5 flex gap-2">
             <Button size="sm" onClick={() => respond("accept")} loading={busy}>
               Accept
@@ -162,17 +164,4 @@ export function NotificationItem({ notification: n }: NotificationItemProps) {
       </div>
     </div>
   );
-}
-
-async function getInviteForNotification(n: NotificationWithActor) {
-  const { createClient } = await import("@/lib/supabase/client");
-  const supabase = createClient();
-  const { data } = await supabase
-    .from("community_invites")
-    .select("id")
-    .eq("community_id", n.community_id!)
-    .eq("invitee_id", n.user_id)
-    .eq("status", "pending")
-    .single();
-  return { data };
 }

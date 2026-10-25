@@ -1,18 +1,23 @@
+"use client";
+
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/queries/profiles";
-import { getMyReservation, getReferralCount } from "@/lib/queries/reserve";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { buttonClassName } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { ReferralShare } from "@/components/reserve/referral-share";
 
-export default async function WelcomePage() {
-  const profile = await getCurrentUser();
-  if (!profile) redirect("/login");
+export default function WelcomePage() {
+  const profile = useQuery(api.profiles.me);
+  const reservation = useQuery(api.reservations.mine);
 
-  const [reservation, referralCount] = await Promise.all([
-    getMyReservation(),
-    getReferralCount(),
-  ]);
+  if (!profile) {
+    return (
+      <div className="flex justify-center py-16 text-muted-foreground">
+        <Spinner />
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-up space-y-6">
@@ -33,7 +38,7 @@ export default async function WelcomePage() {
       {reservation && (
         <ReferralShare
           referralCode={reservation.referral_code}
-          count={referralCount}
+          count={reservation.referral_count}
         />
       )}
 

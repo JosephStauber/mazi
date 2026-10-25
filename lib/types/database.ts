@@ -1,14 +1,8 @@
 /**
- * One page of a keyset-paginated list. `nextCursor` is an opaque token
- * (see `lib/utils/cursor.ts`) or `null` when there are no more rows.
+ * Wire shapes the UI renders. Convex functions return these (see
+ * convex/lib/dto.ts and the matching validators in convex/lib/returns.ts), so
+ * ids are Convex document ids as strings and timestamps are ISO strings.
  */
-export type Page<T> = {
-  items: T[];
-  nextCursor: string | null;
-};
-
-/** A page of profiles plus which of them the current user follows. */
-export type UserPage = Page<ProfileListItem> & { followedIds: string[] };
 
 export type AccessLevel = "reserved" | "full";
 
@@ -118,9 +112,12 @@ export type CommunityMember = {
   created_at: string;
 };
 
-export type CommunityMemberWithProfile = CommunityMember & {
+export type CommunityMemberWithProfile = Pick<CommunityMember, "id" | "role" | "created_at"> & {
   profile: ProfileRef;
 };
+
+/** A row in a follower/following list. */
+export type UserListItem = ProfileListItem & { followed_by_viewer: boolean };
 
 export type InviteStatus = "pending" | "accepted" | "declined" | "expired";
 
@@ -154,7 +151,12 @@ export type Notification = {
   read: boolean;
 };
 
-export type NotificationWithActor = Notification & {
+export type NotificationWithActor = Pick<
+  Notification,
+  "id" | "type" | "read" | "created_at" | "post_id" | "comment_id" | "community_id"
+> & {
   actor: ProfileRef | null;
   community: Pick<Community, "id" | "name" | "slug"> | null;
+  /** Set while a targeted invite can still be accepted/declined. */
+  pending_invite_id: string | null;
 };

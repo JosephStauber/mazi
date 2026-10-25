@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/queries/profiles";
+import { api } from "@/convex/_generated/api";
+import { fetchAuthQuery } from "@/lib/auth-server";
 import { ReservedHeader } from "@/components/reserve/reserved-header";
 
 /**
@@ -11,7 +12,7 @@ export default async function ReservedLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const profile = await getCurrentUser();
+  const profile = await fetchAuthQuery(api.profiles.me);
   if (!profile) redirect("/login");
   if (profile.access_level === "full") redirect("/home");
 

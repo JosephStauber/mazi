@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { reserve } from "@/lib/actions/reserve";
+import { authClient, authErrorMessage } from "@/lib/auth-client";
+import { reserveSchema } from "@/lib/validators/reserve";
 import { TIME_SLIDER, reclaimedMinutes } from "@/lib/reserve/config";
 import { SurveyChips } from "./survey-chips";
 import { TimeSlider } from "./time-slider";
@@ -50,21 +51,38 @@ export function ReserveFlow({ referredBy }: { referredBy?: string }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await reserve({
+      const parsed = reserveSchema.safeParse({
         ...fields,
         reasons,
         dailyMinutes: minutes,
         referredBy,
       });
-      if ("error" in res) {
-        setError(res.error);
+      if (!parsed.success) {
+        setError(parsed.error.issues[0].message);
         return;
       }
-      setResult({
-        username: res.username,
-        referralCode: res.referralCode,
-        needsEmailConfirmation: res.needsEmailConfirmation,
+      const { email, username, password } = parsed.data;
+      // A real account in `reserved` tier: the Convex signup trigger records
+      // the survey + referral from signupMeta, and the tier from server config
+      // (convex/lib/accounts.ts). Email confirmation is required, so the
+      // referral link is shown on /welcome after the user confirms.
+      const { error } = await authClient.signUp.email({
+        email,
+        password,
+        name: username,
+        signupMeta: JSON.stringify({
+          username,
+          reasons: parsed.data.reasons,
+          dailyMinutes: parsed.data.dailyMinutes,
+          referredBy: parsed.data.referredBy,
+        }),
+        callbackURL: "/welcome",
       });
+      if (error) {
+        setError(authErrorMessage(error));
+        return;
+      }
+      setResult({ username, referralCode: null, needsEmailConfirmation: true });
       setStep(7);
     } catch {
       setError(

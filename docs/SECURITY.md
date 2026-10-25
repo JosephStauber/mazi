@@ -1,95 +1,80 @@
 # SECURITY
 
-The security model for Mazi, a privacy-first app. Read this before changing anything touching data access, auth, storage, or migrations. Exhaustive schema/policy detail is in [`DATABASE.md`](DATABASE.md); rationale in [`DECISIONS.md`](DECISIONS.md).
+The security model for Mazi, a privacy-first app. Read this before changing anything touching data access, auth, storage, or the Convex functions. Schema detail is in [`DATABASE.md`](DATABASE.md); rationale in [`DECISIONS.md`](DECISIONS.md) (D11 covers the move off Supabase).
 
-> **No secrets in this repo.** All examples below use placeholders. Real project URLs/keys live only in the gitignored `.env.local` — never paste real values into docs, code, commits, or issues.
+> **No secrets in this repo.** Examples below use placeholders. Server secrets live on the Convex deployment (`npx convex env set …` / dashboard); `.env.local` holds only public `NEXT_PUBLIC_*` URLs and is gitignored.
 
 ## Trust boundary
 
-The browser holds the Supabase **anon key + the user's JWT** and can call the Postgres REST API **directly**. Therefore:
+The browser talks to Convex directly (WebSocket) with the user's Better Auth–issued JWT. **Any public query/mutation can be called by anyone with any arguments.** Therefore:
 
-- **Row Level Security is the only real enforcement.** Server actions (`lib/actions/`) add validation and UX but can be bypassed by a direct API call. Never rely on them for access control.
-- **There is no `service_role` key** in any client-reachable code, and there must not be — it bypasses RLS entirely.
-- **Rule for new tables/columns:** enable RLS and write SELECT/INSERT/UPDATE/DELETE policies *in the same migration*. A table without policies is either fully open or fully closed — never ship that by accident.
+- **Each public Convex function is its own security boundary.** There is no row-level security underneath it. A function that forgets an access check leaks or corrupts data — nothing else will catch it.
+- **All access rules live in `convex/lib/access.ts`** and every public function calls them before reading or writing: `requireViewer` (signed in), `requireFullAccess` (signed in *and* `accessLevel = "full"`), `canViewPost` / `requireVisiblePost`, `getMembership`, `canModeratePost`, `isModeratorRole`. Add new rules there, not inline.
+- **Identity always comes from `ctx.auth.getUserIdentity()`** (via `getViewer`), never from an argument. Arguments like `userId` are only ever *targets* (whose followers to list), never "who am I".
+- **Internal functions** (`internalQuery` / `internalMutation`) are not client-callable — use them for anything privileged (`admin:grant`, `admin:setSignupMode`, `profiles:isUsernameTaken`).
+- **Return validators** (`convex/lib/returns.ts`) are declared on public functions so a response can't accidentally include fields like `authUserId`.
+- The Next.js `proxy.ts` and the server layouts' redirects are **UX only**.
+
+## Auth (Better Auth on Convex)
+
+- Better Auth runs inside Convex as the `betterAuth` component (local install — `convex/betterAuth/`). The Next.js app proxies `/api/auth/*` to it so session cookies are first-party; Convex receives a short-lived JWT, validated through `convex/auth.config.ts`.
+- **Email + password**: verification is **required** before first sign-in (`requireEmailVerification`), password reset by emailed link (1h expiry), sessions revoked on reset. The password policy (8+, upper/lower/digit — `passwordSchema`) is enforced in a Better Auth `before` hook on `/sign-up/email` and `/reset-password`, not just in the forms.
+- **Passkeys** (`@better-auth/passkey`): users add them in Settings and can sign in with them. `rpID`/`origin` derive from `SITE_URL`, so it must be the real origin.
+- **Google / Apple**: wired but off until `GOOGLE_CLIENT_ID/SECRET` / `APPLE_CLIENT_ID/SECRET` are set on the deployment. `auth:providers` tells the UI which buttons to render. Account linking is limited to those trusted providers.
+- **Rate limits**: Better Auth's limiter with **database storage** (so it holds across stateless function instances): sign-up 10/h, sign-in 10/min, reset + verification emails 5/h, 100/min default — per IP.
+- **Account deletion** is Better Auth `deleteUser` (requires the password unless the session is < 1 day old). The `user.onDelete` trigger erases all app data in the same transaction (`deleteAllDataForAuthUser`).
+
+## Access tiers (pre-launch)
+
+- `profiles.accessLevel` is `reserved` or `full`. **Only server code writes it**: the signup trigger (`createProfileForAuthUser`) sets it from `appConfig.signupMode` (missing row ⇒ `reservation`), and `admin:setSignupMode { promoteReserved }` promotes. No public mutation accepts it — `profiles:update` only takes `username` + `bio`.
+- Client-supplied `signupMeta` (username + survey + referral) is parsed defensively (`convex/lib/signup.ts`): canonical reasons only, minutes clamped, bounded referral code, self/unknown referrals dropped. It never influences the tier.
+- Reserved accounts can read/update only their own profile, avatar, and reservation. Everything else goes through `requireFullAccess` and throws for them.
+
+## Access rules by area
+
+| Area | Read | Write |
+|------|------|-------|
+| Profiles | `me`: own (any tier). `byUsername`, lists, search: full users, reserved profiles hidden | `update` / `setAvatar`: own row only (any tier); username case-insensitive unique |
+| Posts | personal posts → any full user; community posts → author, any member, or anyone if the community is public (`canViewPost`) | create: full user, **member** if `communityId`; edit: author, membership re-checked; delete: author or community creator/moderator |
+| Comments | only on posts the viewer can see | create: post must be visible, parent must be on the same post (replies attach to the thread root); edit: author + post still visible; delete: author or community creator/moderator |
+| Likes | counts on visible posts | toggle: post must be visible |
+| Follows | lists to any full user | toggle: self only, not yourself, target must be a full user |
+| Communities | list/bySlug/members to any full user | create: full user; update/delete: creator only; join: **public only**; leave: not the creator |
+| Invites | `inviteByToken`: pending + unexpired only, public community fields | create (targeted or link): creator/moderator; accept: link = reusable, targeted = invitee only and only from `pending`; decline: targeted invitee, pending only |
+| Notifications | recipient only | **no client writes at all** — created server-side inside the action that caused them (`convex/lib/notify.ts`); mentions only notify users who can see the post. mark read: recipient only |
+| Reservations | `reservations:mine`: owner only (referral count = confirmed signups) | trigger-written only |
+| Admin | `admin:*` queries require the `adminUsers` allowlist and throw otherwise; `reservationList` is the **only** path that returns emails | `admin:grant` / `admin:setSignupMode` are internal (CLI / dashboard only) |
+
+## Files
+
+- Uploads use Convex storage: the client gets a one-time upload URL (`files:generateUploadUrl`, signed-in only), uploads, then passes the storage id to `posts:create` / `profiles:setAvatar`.
+- `claimImage` (`convex/files.ts`) validates the **stored** file's metadata — content type must be JPEG/PNG/WebP/GIF (no SVG/HTML), size ≤ 5 MB (post) / 2 MB (avatar) — and rejects a storage id already attached to anything (so an id seen in someone's avatar URL can't be re-attached). Rejected files are deleted.
+- **Post images are private**: the UI never gets a storage URL. `<img>` points at `/api/images/[postId]`, a Next.js route that runs `files:postImageUrl` *as the viewer* (re-checking post visibility) and streams the bytes with `Cache-Control: private`, `nosniff`, and a sandboxing CSP. Invite-only community images are therefore not reachable by URL-sharing. (Closes the old public-bucket gap.)
+- **Avatars are public-by-URL** (Convex storage URLs are unguessable but unauthenticated). Deliberate: avatars are shown to every user anyway.
 
 ## Secrets & configuration
 
-- Config is env vars, all `NEXT_PUBLIC_*`:
-  ```
-  NEXT_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
-  NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
-  NEXT_PUBLIC_APP_URL=http://localhost:3000
-  ```
-- `.env*` is gitignored (`.env.local` confirmed ignored). Keep it that way; do not add a committed `.env`.
-- The anon key is *designed* to be shipped to browsers, but still treat project URL/keys as project data — keep them out of the repo and docs. Rotate keys in the Supabase dashboard if they ever land in git history.
-- **Prohibited:** committing a `service_role` key, a database connection string, or any real key. If you need elevated DB work, the user runs it in the Supabase SQL editor.
+- **Convex deployment env** (server-only): `SITE_URL`, `BETTER_AUTH_SECRET`, `RESEND_API_KEY`, `RESEND_FROM`, optional `GOOGLE_*` / `APPLE_*`. Never put these in `.env.local` or the repo.
+- **`.env.local`** (public): `CONVEX_DEPLOYMENT`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_LAUNCH_MODE`.
+- Without `RESEND_API_KEY`, auth emails are **logged** to the Convex logs instead of sent (dev fallback) — never run production like that.
 
-## RLS policy map (effective after migration `00006`)
+## Input validation
 
-| Table | SELECT | INSERT | UPDATE / DELETE |
-|-------|--------|--------|-----------------|
-| `profiles` | any authenticated | own row (`auth.uid() = id`) | update own row; `email` column dropped (F4); `username` format `CHECK` (00008) |
-| `posts` | own, non-community, or in a **public/joined** community (F5) | `author_id = auth.uid()` **and member if `community_id` set** (B) | update: author, membership re-checked for community posts (F/00006); delete: author **or** community mod/creator |
-| `comments` | on visible posts (F5) | `author_id = auth.uid()` **and post is visible to caller** (F10) | update: author **and** post visible to caller (F/00006); delete: author **or** mod/creator |
-| `likes` | on visible posts (F5) | `user_id = auth.uid()` **and post is visible to caller** (F10) | delete own |
-| `follows` | any authenticated | `follower_id = auth.uid()` | delete own |
-| `communities` | any authenticated | `creator_id = auth.uid()` | update/delete: creator |
-| `community_members` | any authenticated | self-join **public** or bootstrap **creator** of own community (F1/F2); invite-only joins go through `accept_invite` | delete: self or mod/creator. **No UPDATE policy** → roles immutable (see moderator note) |
-| `community_invites` | inviter or invitee only (F3) | mod/creator of the community | **No client UPDATE policy** (00006/A) → metadata immutable; the only transition is a targeted invitee declining via `decline_invite` |
-| `notifications` | recipient only (`user_id = auth.uid()`) | `actor_id = auth.uid()` and F11 relationship checks; the `comment` branch also binds `comment_id.post_id = post_id` (00006/D) | update own (mark read) |
-| `reservations` (00010) | **owner only** (`auth.uid() = profile_id`) | owner only; in practice written by `handle_new_user()` (definer) at signup | none (referral counts via `get_referral_count()`) |
-
-**Pre-launch access-tier gate (00010 + hardened in 00012).** A `reserved` account holds a real JWT + the anon key, so the "outside the app" boundary is enforced entirely at the DB:
-- **Writes** — every "using the app" INSERT (posts/comments/likes/follows/communities/community_members) requires `public.has_full_access()`, and `accept_invite` checks it internally. 00012 adds **restrictive** policies extending the gate to update/delete, notification/invite creation, and `post-images` storage upload.
-- **Reads** — 00012 adds **restrictive SELECT** policies (`has_full_access()`, with an own-row escape for profiles) so a reserved user can read only their own profile + their own reservation, not the social graph.
-- **The tier column itself** — `profiles` table-level INSERT/UPDATE is revoked from `authenticated`; only `(username, bio, avatar_url)` are granted, so a client can never write `access_level` (closes self-promotion). The tier is set by the signup trigger from the **RLS-locked `app_config.signup_mode`** — never from client metadata or the public env flag — so a direct `/auth/v1/signup` during reservation mode still lands `reserved`.
-- **`reservations`** are trigger-written only (no client INSERT policy). Existing rows default to `full`, so real users are unaffected. Middleware/layout redirects are only UX. See [`ONBOARDING.md`](ONBOARDING.md).
-
-`comments.parent_id` is DB-enforced (trigger `comments_parent_integrity`, 00006/G) to reference a comment on the **same** `post_id` and never itself.
-
-Storage (`avatars`, `post-images` buckets):
-
-- Upload path's first segment must be the uploader's `auth.uid()` (F7).
-- Filename extension must be a raster image (`jpg/jpeg/png/webp/gif`) and any declared `mimetype` must be an allowed image — **blocks `.svg`/`.html` stored-XSS** served from a public bucket. This lives at the RLS layer because the browser can upload directly with the anon key.
-- These checks are enforced on **INSERT and UPDATE**. Avatar upload is an upsert (replaces the existing object via UPDATE); `00006/C` added the matching `WITH CHECK` so a replacement can't smuggle in an `.svg`/`.html` object. (`post-images` has no UPDATE policy and writes random paths, so no equivalent bypass.)
-
-## `SECURITY DEFINER` functions
-
-These run with elevated rights and each pin `search_path = public`:
-
-- `handle_new_user()` — trigger on `auth.users` insert; creates the `profiles` row, collision-tolerant on username (F12). `00010`: reservation signups (`raw_user_meta_data.reservation = 'true'`) get `access_level='reserved'` + a `reservations` row atomically.
-- `has_full_access()` (`00010`) — the access-tier gate; returns whether the caller's profile is `full`. Used in the write-side policies above and inside `accept_invite`. Reserved/missing profile → false.
-- `username_available(text)` (`00010`) — the **one anon-callable** definer here (funnel needs it before signup). Returns only a boolean; reads no rows out. `execute` granted to `anon` + `authenticated`.
-- `get_referral_count()` (`00010`) — count of the caller's own referrals; lets the invite panel show a number without exposing others' reservation rows.
-- `rate_limit_hit(bucket, key, max, window)` (`00010`) — anon-callable DB throttle for the reserve funnel; records/reads the RLS-locked `rate_limits` table. Fails open.
-- `is_admin()` / `admin_reservation_stats()` / `admin_reservation_list()` (`00011`) — the dashboard. `is_admin()` gates the other two, which raise `Not authorized` otherwise. `admin_reservation_list()` is the sole client path to reservation emails. All `authenticated`-only.
-- `delete_user()` — right-to-erasure; deletes only `auth.uid()`'s own auth user (cascades to all their data).
-- `get_invite_by_token(token)` — resolves a shareable invite to public community fields, pending+unexpired only.
-- `accept_invite(invite_id)` — validates + joins atomically; tokened links multi-use, targeted invites single-use **and accepted only from `pending`** so a removed member cannot rejoin (00006/E).
-- `decline_invite(invite_id)` — the only invite-status transition open to a client. A **targeted** invitee declines their own **pending** invite; token links are not per-user declinable. Replaces the old broad invitee UPDATE policy (00006/A).
-
-`enforce_comment_parent_integrity()` — `SECURITY DEFINER` trigger (not a client RPC) enforcing the `comments.parent_id` same-post / non-self rule (00006/G).
-
-When adding a definer function: pin `search_path`, `revoke` from `public`/`anon`, `grant execute` to `authenticated`, and scope every action to `auth.uid()`. The one deliberate exception is `username_available(text)` (granted `anon`) — the pre-signup funnel needs it; it takes no side effects and returns only a boolean, leaking nothing beyond "is this handle taken."
-
-## Input validation & integrity
-
-- All user input is Zod-validated in `lib/validators/` **and** bounded by DB `CHECK` constraints (post ≤10k, comment ≤5k, bio ≤2k; `profiles.username` matches `^[a-zA-Z0-9_]{3,30}$`, 00008) so direct API writes can't store unbounded blobs or off-format handles (F9). Add both layers for new fields. The `username` `CHECK` also backs the notification `mention` RLS branch, which interpolates a handle into a regex and relies on it being `[a-zA-Z0-9_]` only.
-- User-generated text renders through `RichText` (React nodes; `@mentions` become links). **Never** `dangerouslySetInnerHTML` on user content — that reintroduces XSS.
+- Shared Zod schemas in `lib/validators/` run on the server via `parseOrDeny` (post ≤ 2000, comment ≤ 1000, bio ≤ 160, username `^[a-zA-Z0-9_]{3,30}$`, community name/description limits). Client checks are UX only.
+- User text renders through `RichText` (React nodes; mentions → links). **Never** `dangerouslySetInnerHTML` on user content.
+- Errors meant for users are thrown as `ConvexError(message)`; the client shows them via `errorMessage()` and shows a generic message for anything else.
 
 ## Known notes / residuals
 
-- **Notification spoofing** — F11 relationship-validates inserts; `00006/D` binds the `comment` branch's `comment_id` to its `post_id`, and `00009` extends the same `comment_id.post_id = post_id` binding to the `mention`-of-a-comment case (a genuine @mention notification could otherwise be relinked to an unrelated post). When adding a notification type, add its RLS branch and consider migrating inserts to DB triggers to remove client inserts entirely.
-- **Write-through on hidden posts** — closed by F10 (comment/like INSERT gated on post visibility) and extended by `00006/F` (the new comment UPDATE policy re-checks post visibility, so an edit can't relocate a comment onto a hidden post).
-- **July 14 audit gaps** — **closed in `00006`** (applied + verified on the live DB 2026-07-15; see `DATABASE.md`). That migration: makes `community_invites` metadata immutable to clients (decline moves to `decline_invite`, so an invitee can no longer rewrite `community_id` and `accept_invite` elsewhere); requires membership for community post INSERT/UPDATE; adds the missing owner UPDATE policies for posts and comments; adds a WITH CHECK to the avatar Storage UPDATE mirroring the INSERT path/extension/MIME checks; binds comment notifications to the referenced comment's real post; enforces `comments.parent_id` same-post/non-self integrity via trigger; and restricts targeted-invite acceptance to `pending` only (no rejoin after removal).
-- **Private image exposure** — `post-images` is currently a public bucket. Post RLS does not protect an uploaded image URL, including an image attached to an invite-only-community post. Move community-content images behind authorized delivery before representing them as private.
-- **Pre-launch reserve endpoint is unauthenticated by design** — `reserve()`, `username_available()`, and `rate_limit_hit()` are reachable by anyone (the funnel runs before signup). Abuse is bounded by unique email/username (incl. case-insensitive, 00012), DB `CHECK`s, trigger sanitization, and a **DB-backed per-IP rate limit** with **server-fixed** limits (`rate_limit_hit(action, key)` — the caller can't choose max/window/bucket; the key is md5-hashed; 00012). This is **defense-in-depth for the funnel path only** — it cannot protect the directly-callable `/auth/v1/signup`. Supabase Auth's built-in rate limits + a captcha are the real control; add a captcha before a large public push (`TODO.md`).
-- **Reservation emails are admin-only** — email is PII in `auth.users`, unreadable by any client. `00011`'s `admin_reservation_list()` (SECURITY DEFINER, guarded by `is_admin()`) is the **only** way emails reach a client, and only for allowlisted admins. The `admin_users` table is RLS-locked (no policies); the dashboard route group + the RPCs both check `is_admin`, and the guard fails closed. Adding an admin is a manual `insert into admin_users` (privilege grant — do it deliberately).
-- **Legal placeholders** — `lib/legal/config.ts` contact/entity fields are not real; policy copy needs counsel review (not a code vuln, but a compliance gap).
+- **No CAPTCHA** on signup/reserve yet — Better Auth's IP rate limit is the only anti-abuse control (TODO).
+- **`profiles:usernameAvailable` is public and not rate-limited** (Convex queries can't write). It returns only a boolean; handles are public on the platform anyway.
+- **Large cascades**: account/community deletion runs in one Convex transaction. Fine at current scale; a very large account could hit transaction limits (TODO: move to a batched/scheduled deletion).
+- **Orphaned uploads**: a file uploaded but never attached stays in storage (TODO: periodic cleanup).
+- **Legal placeholders** — `lib/legal/config.ts` contact/entity fields are not real; policy copy needs counsel review.
 - **Moderator role** is dormant (no assignment path) by design — see `DECISIONS.md` D9.
 
 ## Handling a security fix
 
-1. Reproduce / confirm the gap against the **RLS layer**, not just the action.
-2. Fix in a **new numbered migration** (idempotent), scoped tightly; keep legitimate flows working (notification inserts are best-effort, so a too-strict policy fails safe there — but comment/like/action inserts surface errors, so mirror existing read predicates exactly).
-3. Log it in `DEVLOG.md`, note the manual-apply step, and update this file's policy map.
+1. Reproduce against the **Convex function** (call it directly with `npx convex run` or from the browser console), not just the UI.
+2. Fix in `convex/lib/access.ts` (or the function), keeping the rule in one place. Add a return validator if a response could over-share.
+3. Log it in `DEVLOG.md` and update the table above.
