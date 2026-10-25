@@ -17,6 +17,14 @@ The running memory of the project. **Every meaningful change gets an entry**, ne
 
 ## Entries
 
+## 2026-10-25 — Dependency CVE bump (next 16.4.3, zod 4.6.7)
+**By:** Claude (agent)
+**Summary:** Fixed H-1 from the 2026-10-24 code review. `npm audit` reported 7 vulnerabilities (1 critical: Next.js App Router proxy bypass / SSRF / image-optimizer RCE; high: zod, sharp, postcss, nanoid, source-map-js). Bumped `next` 16.2.10 → 16.4.3 (exact pin kept), `eslint-config-next` 16.1.6 → 16.4.3 to match, `zod` ^4.3.6 → ^4.6.7, and ran `npm audit fix` for the transitive set. `npm audit` now reports 0 (prod and dev).
+**Changed:** `package.json`, `package-lock.json`.
+**Why:** Critical/high advisories reachable in a default Next deployment; blocks any public deploy.
+**Verify:** `tsc` clean; `eslint` 0 errors; `next build` clean; `next start` serves `/`, `/login`, `/reserve`, `/legal/privacy`, and `proxy.ts` still redirects signed-out `/home` + `/api/images/*` to `/login`. Exercised on a local anonymous Convex backend + `next dev` (16.4.3): reserve funnel signup → logged confirm link → `/welcome`; reserved user bounced off `/home`; `setSignupMode` open+promote and `admin:grant`; post with image + @mention (notification written), like/unlike, comment; avatar upload; invite-only community + image post (member 200, non-member 404 on `/api/images`, "Post not found" page); admin Users/Reservations/Audit render, non-admin gets 404; log out / log in (the `window.location` reloads); forgot-password → logged link → reset → log in with new password; account deletion erased profile, notifications, and auth user. **Not exercised:** passkeys, OAuth, data-export download, suspension. The newer `eslint-config-next` adds `no-location-assign-relative-destination`, which warns on 6 deliberate `window.location.href` full reloads after sign-in/out/delete (needed so server layouts see the new cookie) — left as-is.
+**Follow-ups:** found while testing, both pre-existing (added to TODO): post images are browser-cached after logout; avatars don't render against a local backend.
+
 ## 2026-10-24 — Admin panel foundation: nav, audit log, Users page with suspend
 **By:** Claude (agent)
 **Summary:** The admin area now has a tab nav (Users · Reservations · Audit log; `/admin` → `/admin/users`), an append-only audit log, and a Users page (live list, All/Suspended filter, handle-prefix search, suspend with a user-facing reason, restore). Suspension is enforced in `requireViewer`, so every app function fails closed for a suspended account; it keeps data export and lands on a new `/suspended` page showing the reason.
