@@ -203,8 +203,9 @@ export default function PrivacyPolicy() {
       <Section title="9. How we protect your data">
         <P>
           We use industry-standard measures including encryption in transit,
-          hashed passwords, and row-level security that restricts each
-          account&rsquo;s access to its own permitted data. No system is
+          hashed passwords, and server-side authorization checks on every
+          request that limit each account to the data it is permitted to see
+          and change. No system is
           perfectly secure, but we work to protect your information and will
           notify you and the relevant authority of a breach where the law
           requires.

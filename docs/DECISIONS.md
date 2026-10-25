@@ -22,8 +22,7 @@ Format: `### D<n> — Title` · **Date** · **Status** (Active / Superseded by D
 **Date:** 2026-06-01 · **Status:** Active (supersedes the original black-and-white minimalist aesthetic)
 **Decision:** Warm paper background, ink text, single vermillion accent, Fraunces + Hanken Grotesk, faint grain. Driven entirely by CSS-variable tokens in `app/globals.css`.
 **Why:** The stark B&W look read as generic/"the same"; the user chose to push bolder into a distinctive editorial identity.
-**Implications:** Style via tokens, never hard-coded hex. `README.md` / `PROJECT_OUTLINE.txt` still describe B&W/Geist — stale, pending reconciliation.
-
+**Implications:** Style via tokens, never hard-coded hex.
 ### D4 — Chronological only; no algorithm, ads, or tracking
 **Date:** 2026-03-24 · **Status:** Active — analytics clause amended by D15
 **Decision:** Feeds are strict reverse-chronological. No ranking, suggested content, ads, or third-party analytics/trackers.
@@ -96,3 +95,9 @@ Format: `### D<n> — Title` · **Date** · **Status** (Active / Superseded by D
 **Why:** The user wanted basic traffic numbers for the deployed site; this is the most privacy-respecting option on the existing host and needs no consent banner.
 **Implications:** D4 still bans ads, ranking, and trackers. Don't add custom events, user ids, or other analytics/session-replay tools without a new decision. New dynamic routes that put a person or content id in the path must be added to the redaction list. Vercel is disclosed as a subprocessor in `lib/legal/config.ts`.
 
+
+### D16 — Per-account write limits and precomputed admin stats
+**Date:** 2026-10-25 · **Status:** Active
+**Decision:** App mutations that a script could loop (post, comment, edit, like, follow, invite, create community, upload, profile update) spend a per-account token from `@convex-dev/rate-limiter` (`convex/lib/rateLimit.ts`). The reservation dashboard reads a precomputed `reservationStats` row maintained in the same transactions as the events it counts, instead of recomputing from every row.
+**Why:** The 2026-10-24 code review (H-2, H-4): only Better Auth's endpoints were throttled, and the dashboard's per-row joins hit Convex's per-query read limit at ~2,000 reservations. The rate limiter is Convex's own component (transactional, no extra service); counters follow D14.
+**Implications:** New loopable writes call `enforceRateLimit`. New ways to create, confirm, customize, or erase a reservation go through `lib/reservationStats.ts`; `admin:rebuildReservationStats` repairs drift. Queries can't be rate-limited, so public queries must stay cheap (SECURITY.md).

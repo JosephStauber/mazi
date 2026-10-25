@@ -13,6 +13,7 @@ import type * as admin from "../admin.js";
 import type * as auth from "../auth.js";
 import type * as comments from "../comments.js";
 import type * as communities from "../communities.js";
+import type * as crons from "../crons.js";
 import type * as email from "../email.js";
 import type * as feed from "../feed.js";
 import type * as files from "../files.js";
@@ -23,6 +24,8 @@ import type * as lib_accounts from "../lib/accounts.js";
 import type * as lib_cascade from "../lib/cascade.js";
 import type * as lib_dto from "../lib/dto.js";
 import type * as lib_notify from "../lib/notify.js";
+import type * as lib_rateLimit from "../lib/rateLimit.js";
+import type * as lib_reservationStats from "../lib/reservationStats.js";
 import type * as lib_returns from "../lib/returns.js";
 import type * as lib_signup from "../lib/signup.js";
 import type * as lib_validate from "../lib/validate.js";
@@ -44,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   comments: typeof comments;
   communities: typeof communities;
+  crons: typeof crons;
   email: typeof email;
   feed: typeof feed;
   files: typeof files;
@@ -54,6 +58,8 @@ declare const fullApi: ApiFromModules<{
   "lib/cascade": typeof lib_cascade;
   "lib/dto": typeof lib_dto;
   "lib/notify": typeof lib_notify;
+  "lib/rateLimit": typeof lib_rateLimit;
+  "lib/reservationStats": typeof lib_reservationStats;
   "lib/returns": typeof lib_returns;
   "lib/signup": typeof lib_signup;
   "lib/validate": typeof lib_validate;
@@ -93,4 +99,5 @@ export declare const internal: FilterApi<
 export declare const components: {
   betterAuth: import("../betterAuth/_generated/component.js").ComponentApi<"betterAuth">;
   resend: import("@convex-dev/resend/_generated/component.js").ComponentApi<"resend">;
+  rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
 };

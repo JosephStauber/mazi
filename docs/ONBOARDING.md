@@ -75,7 +75,7 @@ Set it in `.env.local` (and the host's env). It's a `NEXT_PUBLIC_` var, so it's 
 
 ## Admin dashboard — `/admin/reservations`
 
-An admin-only view of the waitlist (own route group `app/(admin)/`, wide chrome), live-updating. Gated by the `adminUsers` allowlist: non-admins get a 404 from the layout and the `admin:*` queries throw. Shows: total/growth/confirmed/referred/avg-time stat cards, a collective "time reclaimed per year" headline, a 30-day signups bar chart, the "what draws them" reason breakdown, reported-time buckets, a referral leaderboard, and the full per-signup table with a **copy-all-emails** button for outreach. Data comes from `admin:reservationStats` + `admin:reservationList` (`convex/admin.ts`); `reservationList` is the only function that returns emails.
+An admin-only view of the waitlist (own route group `app/(admin)/`, wide chrome), live-updating. Gated by the `adminUsers` allowlist: non-admins get a 404 from the layout and the `admin:*` queries throw. Shows: total/growth/confirmed/referred/avg-time stat cards, a collective "time reclaimed per year" headline, a 30-day signups bar chart, the "what draws them" reason breakdown, reported-time buckets, a referral leaderboard, and the per-signup table (100 rows at a time, more load on scroll) with a **copy-emails** button for the rows loaded. Data comes from `admin:reservationStats` (precomputed counters — see `DATABASE.md`) + `admin:reservationList` (paginated) in `convex/admin.ts`; `reservationList` is the only function that returns emails.
 
 **Seed the first admin** (once — this is a privilege grant, do it deliberately; you need a Mazi account first):
 ```bash

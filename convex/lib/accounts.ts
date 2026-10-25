@@ -1,6 +1,7 @@
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { bump, deleteCommentCascade, deleteCommunityCascade, deletePostCascade, removeMembership } from "./cascade";
+import { applyReservation, bumpReferralCount, updateStats } from "./reservationStats";
 import { parseSignupMeta, randomToken, usernameFromIdentity } from "./signup";
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,30}$/;
@@ -27,6 +28,7 @@ async function uniqueReferralCode(ctx: MutationCtx) {
 type AuthUser = {
   _id: string;
   email: string;
+  emailVerified?: boolean;
   name?: string | null;
   signupMeta?: string | null;
 };
@@ -83,13 +85,19 @@ export async function createProfileForAuthUser(ctx: MutationCtx, user: AuthUser)
         .first();
       if (referrer) referredBy = referrer.referralCode;
     }
-    await ctx.db.insert("reservations", {
+    const id = await ctx.db.insert("reservations", {
       profileId,
       reasons: meta.reasons,
       dailySocialMinutes: meta.dailyMinutes,
       referralCode,
       referredBy,
+      // OAuth signups can arrive already verified.
+      emailConfirmed: !!user.emailVerified,
+      customized: false,
+      referralCount: 0,
     });
+    if (referredBy) await bumpReferralCount(ctx, referredBy, 1);
+    await applyReservation(ctx, (await ctx.db.get(id))!, 1);
   }
   return profileId;
 }
@@ -195,6 +203,14 @@ export async function deleteAllDataForAuthUser(ctx: MutationCtx, authUserId: str
       .withIndex("by_referredBy", (q) => q.eq("referredBy", reservation.referralCode))
       .collect();
     for (const r of referred) await ctx.db.patch(r._id, { referredBy: undefined });
+    // Their down-line no longer counts as referred; their referrer loses one.
+    if (referred.length) {
+      await updateStats(ctx, (s) => {
+        s.referred = Math.max(0, s.referred - referred.length);
+      });
+    }
+    if (reservation.referredBy) await bumpReferralCount(ctx, reservation.referredBy, -1);
+    await applyReservation(ctx, reservation, -1);
     await ctx.db.delete(reservation._id);
   }
 

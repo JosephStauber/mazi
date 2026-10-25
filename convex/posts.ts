@@ -14,6 +14,7 @@ import {
 import { bump, deletePostCascade } from "./lib/cascade";
 import { refLoader, toPostDTO } from "./lib/dto";
 import { notify, notifyMentions } from "./lib/notify";
+import { enforceRateLimit } from "./lib/rateLimit";
 import { paginated, postV } from "./lib/returns";
 import { parseOrDeny } from "./lib/validate";
 import { claimImage } from "./files";
@@ -28,6 +29,7 @@ export const create = mutation({
   returns: v.id("posts"),
   handler: async (ctx, args) => {
     const viewer = await requireFullAccess(ctx);
+    await enforceRateLimit(ctx, "post", viewer._id);
     const content = parseOrDeny(postContentSchema, args.content);
     if (args.communityId) {
       // Community posts require membership (was RLS 00006/B).
@@ -57,6 +59,7 @@ export const edit = mutation({
   returns: v.null(),
   handler: async (ctx, { postId, content }) => {
     const viewer = await requireFullAccess(ctx);
+    await enforceRateLimit(ctx, "edit", viewer._id);
     const post = await ctx.db.get(postId);
     if (!post || post.authorId !== viewer._id) deny("Post not found");
     // Membership is re-checked so a removed member can't keep editing (00006/F).
@@ -88,6 +91,7 @@ export const toggleLike = mutation({
   returns: v.object({ liked: v.boolean() }),
   handler: async (ctx, { postId }) => {
     const viewer = await requireFullAccess(ctx);
+    await enforceRateLimit(ctx, "like", viewer._id);
     const post = await requireVisiblePost(ctx, viewer, postId);
     const existing = await ctx.db
       .query("likes")

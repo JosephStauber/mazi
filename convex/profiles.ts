@@ -11,6 +11,8 @@ import {
 } from "./lib/access";
 import { toProfile, toProfileListItem, toProfileRef } from "./lib/dto";
 import { communityRefV, paginated, profileListItemV, profileRefV, profileV } from "./lib/returns";
+import { enforceRateLimit } from "./lib/rateLimit";
+import { syncReservationCustomized } from "./lib/reservationStats";
 import { parseOrDeny } from "./lib/validate";
 import { claimImage } from "./files";
 import { updateProfileSchema } from "../lib/validators/profile";
@@ -121,6 +123,7 @@ export const update = mutation({
   handler: async (ctx, args) => {
     // Reserved accounts may set up their profile before launch.
     const viewer = await requireViewer(ctx);
+    await enforceRateLimit(ctx, "profile", viewer._id);
     const data = parseOrDeny(updateProfileSchema, {
       ...(args.username ? { username: args.username.trim() } : {}),
       ...(args.bio !== undefined ? { bio: args.bio } : {}),
@@ -134,6 +137,7 @@ export const update = mutation({
     }
     if (data.bio !== undefined) patch.bio = data.bio.trim() || undefined;
     await ctx.db.patch(viewer._id, patch);
+    if (data.bio !== undefined) await syncReservationCustomized(ctx, viewer._id);
     return null;
   },
 });
@@ -143,10 +147,12 @@ export const setAvatar = mutation({
   returns: v.null(),
   handler: async (ctx, { storageId }) => {
     const viewer = await requireViewer(ctx);
+    await enforceRateLimit(ctx, "profile", viewer._id);
     await claimImage(ctx, storageId, AVATAR_MAX_BYTES);
     const previous = viewer.avatarId;
     await ctx.db.patch(viewer._id, { avatarId: storageId });
     if (previous) await ctx.storage.delete(previous);
+    await syncReservationCustomized(ctx, viewer._id);
     return null;
   },
 });

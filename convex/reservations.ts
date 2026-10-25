@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { getViewer } from "./lib/access";
-import { authComponent } from "./auth";
 
 /**
  * The signed-in user's own reservation + how many confirmed signups used their
@@ -27,13 +26,7 @@ export const mine = query({
       .withIndex("by_referredBy", (q) => q.eq("referredBy", reservation.referralCode))
       .take(500);
     // Count only referrals that confirmed their email (as before).
-    let confirmed = 0;
-    for (const r of referred) {
-      const profile = await ctx.db.get(r.profileId);
-      if (!profile) continue;
-      const user = await authComponent.getAnyUserById(ctx, profile.authUserId);
-      if (user?.emailVerified) confirmed++;
-    }
+    const confirmed = referred.filter((r) => r.emailConfirmed).length;
     return { referral_code: reservation.referralCode, referral_count: confirmed };
   },
 });

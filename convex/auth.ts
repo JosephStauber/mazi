@@ -12,6 +12,7 @@ import authSchema from "./betterAuth/schema";
 import authConfig from "./auth.config";
 import { sendEmailVerification, sendResetPassword } from "./email";
 import { createProfileForAuthUser, deleteAllDataForAuthUser } from "./lib/accounts";
+import { setReservationFlag } from "./lib/reservationStats";
 import { parseSignupMeta } from "./lib/signup";
 import { passwordSchema, usernameSchema } from "../lib/validators/auth";
 
@@ -34,6 +35,16 @@ export const authComponent = createClient<DataModel, typeof authSchema>(
       user: {
         onCreate: async (ctx, user) => {
           await createProfileForAuthUser(ctx, user);
+        },
+        onUpdate: async (ctx, user, previous) => {
+          if (!!user.emailVerified === !!previous.emailVerified) return;
+          const profile = await ctx.db
+            .query("profiles")
+            .withIndex("by_authUserId", (q) => q.eq("authUserId", user._id))
+            .unique();
+          if (profile) {
+            await setReservationFlag(ctx, profile._id, "emailConfirmed", !!user.emailVerified);
+          }
         },
         onDelete: async (ctx, user) => {
           await deleteAllDataForAuthUser(ctx, user._id);

@@ -20,7 +20,7 @@ Read the doc that matches your task; skim the rest. They live in [`docs/`](docs/
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Before reversing an approach | Why we work this way (ADR-style log). |
 | [`docs/SETUP.md`](docs/SETUP.md) | First-time setup / env | Install, Convex + Better Auth + Resend env (placeholders), verify commands. |
 | [`docs/ONBOARDING.md`](docs/ONBOARDING.md) | Pre-launch funnel / reservations / access tiers | The public `/reserve` funnel, `reserved` vs `full` access tiers, referral loop, the `NEXT_PUBLIC_LAUNCH_MODE` flag, and the flip-to-open-at-launch checklist. |
-| [`README.md`](README.md) · [`PROJECT_OUTLINE.txt`](PROJECT_OUTLINE.txt) | Onboarding context only | **Stale** (predate the redesign and the move to Convex). Trust the `docs/` set + the code over these until they're reconciled. |
+| [`README.md`](README.md) | Onboarding context only | Short front page: product, stack, quick start, links into `docs/`. The `docs/` set is the source of truth. |
 
 ---
 

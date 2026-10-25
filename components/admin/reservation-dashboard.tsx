@@ -1,16 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  RECLAIM_FACTOR,
-  RESERVATION_LIST_LIMIT,
-  SURVEY_OPTIONS,
-} from "@/lib/reserve/config";
+import { RECLAIM_FACTOR, SURVEY_OPTIONS } from "@/lib/reserve/config";
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "@/convex/_generated/api";
+import { Spinner } from "@/components/ui/spinner";
 
 type ReservationStats = FunctionReturnType<typeof api.admin.reservationStats>;
-type ReservationRow = FunctionReturnType<typeof api.admin.reservationList>[number];
+type ReservationRow = FunctionReturnType<typeof api.admin.reservationList>["page"][number];
+/** The paginated list, flattened (passing the hook's object trips react-hooks/refs). */
+type ListProps = {
+  rows: ReservationRow[];
+  done: boolean;
+  loading: boolean;
+  /** Callback ref for the load-more marker. */
+  onSentinel: (el: HTMLElement | null) => void;
+};
 
 const reasonLabel = (id: string) =>
   SURVEY_OPTIONS.find((o) => o.id === id)?.label ?? id;
@@ -19,13 +24,8 @@ const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
 
 export function ReservationDashboard({
   stats,
-  rows,
-  listError = false,
-}: {
-  stats: ReservationStats;
-  rows: ReservationRow[];
-  listError?: boolean;
-}) {
+  ...list
+}: { stats: ReservationStats } & ListProps) {
   const reclaimHoursYear = Math.round(
     (stats.sum_minutes * RECLAIM_FACTOR * 365) / 60
   );
@@ -39,7 +39,7 @@ export function ReservationDashboard({
             Pre-launch waitlist — who&rsquo;s in, what draws them, and who to reach.
           </p>
         </div>
-        <CopyEmails rows={rows} />
+        <CopyEmails rows={list.rows} all={list.done} />
       </header>
 
       {stats.total === 0 ? (
@@ -127,11 +127,7 @@ export function ReservationDashboard({
             </section>
           </div>
 
-          <ReservationsTable
-            rows={rows}
-            total={stats.total}
-            listError={listError}
-          />
+          <ReservationsTable {...list} total={stats.total} />
         </>
       )}
     </div>
@@ -246,7 +242,8 @@ function MinuteBuckets({
   );
 }
 
-function CopyEmails({ rows }: { rows: ReservationRow[] }) {
+/** Copies the emails of the rows loaded so far (scroll the table to load more). */
+function CopyEmails({ rows, all }: { rows: ReservationRow[]; all: boolean }) {
   const [copied, setCopied] = useState(false);
   const emails = useMemo(() => rows.map((r) => r.email).join(", "), [rows]);
 
@@ -267,34 +264,28 @@ function CopyEmails({ rows }: { rows: ReservationRow[] }) {
       disabled={rows.length === 0}
       className="inline-flex h-10 items-center rounded-[var(--radius-md)] bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
     >
-      {copied ? "Copied!" : `Copy ${rows.length} email${rows.length === 1 ? "" : "s"}`}
+      {copied
+        ? "Copied!"
+        : `Copy ${rows.length}${all ? "" : " loaded"} email${rows.length === 1 ? "" : "s"}`}
     </button>
   );
 }
 
 function ReservationsTable({
   rows,
+  done,
+  loading,
+  onSentinel,
   total,
-  listError,
-}: {
-  rows: ReservationRow[];
-  total: number;
-  listError: boolean;
-}) {
-  const truncated = rows.length >= RESERVATION_LIST_LIMIT && total > rows.length;
+}: ListProps & { total: number }) {
   return (
     <section className="rounded-[var(--radius-lg)] border border-border bg-surface">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-5 py-3">
         <h2 className="text-sm font-semibold text-foreground">
-          {truncated
-            ? `Reservations — showing first ${rows.length.toLocaleString()} of ${total.toLocaleString()}`
-            : `All reservations (${rows.length.toLocaleString()})`}
+          {done
+            ? `All reservations (${rows.length.toLocaleString()})`
+            : `Reservations — ${rows.length.toLocaleString()} of ${total.toLocaleString()} loaded`}
         </h2>
-        {listError && (
-          <span className="text-xs font-medium text-danger">
-            Couldn&rsquo;t load the list — try refreshing.
-          </span>
-        )}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] text-sm">
@@ -311,7 +302,7 @@ function ReservationsTable({
           <tbody>
             {rows.map((r) => (
               <tr
-                key={r.username}
+                key={r.id}
                 className="border-b border-border last:border-0 hover:bg-muted/40"
               >
                 <td className="px-5 py-3 font-medium text-foreground">
@@ -344,6 +335,11 @@ function ReservationsTable({
           </tbody>
         </table>
       </div>
+      {!done && (
+        <div ref={onSentinel} className="flex justify-center py-4 text-muted-foreground">
+          {loading && <Spinner />}
+        </div>
+      )}
     </section>
   );
 }

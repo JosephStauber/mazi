@@ -12,6 +12,7 @@ import {
 import { bump, deleteCommentCascade } from "./lib/cascade";
 import { refLoader, toCommentDTO } from "./lib/dto";
 import { notify, notifyMentions } from "./lib/notify";
+import { enforceRateLimit } from "./lib/rateLimit";
 import { commentV, paginated } from "./lib/returns";
 import { parseOrDeny } from "./lib/validate";
 import { commentContentSchema } from "../lib/validators/comment";
@@ -60,6 +61,7 @@ export const create = mutation({
   returns: v.id("comments"),
   handler: async (ctx, args) => {
     const viewer = await requireFullAccess(ctx);
+    await enforceRateLimit(ctx, "comment", viewer._id);
     // Commenting requires being able to see the post (was RLS F10).
     const post = await requireVisiblePost(ctx, viewer, args.postId);
     const content = parseOrDeny(commentContentSchema, args.content);
@@ -105,6 +107,7 @@ export const edit = mutation({
   returns: v.null(),
   handler: async (ctx, { commentId, content }) => {
     const viewer = await requireFullAccess(ctx);
+    await enforceRateLimit(ctx, "edit", viewer._id);
     const comment = await ctx.db.get(commentId);
     if (!comment || comment.authorId !== viewer._id) deny("Comment not found");
     // The post must still be visible to the author (00006/F).

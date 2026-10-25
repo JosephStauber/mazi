@@ -3,12 +3,14 @@ import { mutation } from "./_generated/server";
 import { deny, requireFullAccess } from "./lib/access";
 import { bump } from "./lib/cascade";
 import { notify } from "./lib/notify";
+import { enforceRateLimit } from "./lib/rateLimit";
 
 export const toggle = mutation({
   args: { targetUserId: v.id("profiles") },
   returns: v.object({ following: v.boolean() }),
   handler: async (ctx, { targetUserId }) => {
     const viewer = await requireFullAccess(ctx);
+    await enforceRateLimit(ctx, "follow", viewer._id);
     if (viewer._id === targetUserId) deny("Cannot follow yourself");
     const target = await ctx.db.get(targetUserId);
     if (!target || target.accessLevel !== "full") deny("User not found");

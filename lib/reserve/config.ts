@@ -6,9 +6,6 @@
 
 export type LaunchMode = "reservation" | "open";
 
-/** Max rows the admin reservation-list RPC returns (mirror of the SQL limit). */
-export const RESERVATION_LIST_LIMIT = 2000;
-
 /**
  * `reservation` (default): the public face is the /reserve funnel; open signup
  * is closed. Flip `NEXT_PUBLIC_LAUNCH_MODE=open` at launch to restore /signup.

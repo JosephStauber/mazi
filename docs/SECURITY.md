@@ -54,7 +54,8 @@ The browser talks to Convex directly (WebSocket) with the user's Better Auth–i
 
 ## Files
 
-- Uploads use Convex storage: the client gets a one-time upload URL (`files:generateUploadUrl`, signed-in only), uploads, then passes the storage id to `posts:create` / `profiles:setAvatar`.
+- Uploads use Convex storage: the client gets a one-time upload URL (`files:generateUploadUrl`, signed-in only, rate-limited per account), uploads, then passes the storage id to `posts:create` / `profiles:setAvatar`.
+- **Unclaimed uploads are deleted**: `files:sweepOrphanedUploads` runs hourly (`convex/crons.ts`) and deletes `_storage` files over a day old that no `profiles.avatarId` / `posts.imageId` references. It walks storage from a saved cursor (`jobState`), so each file is checked once.
 - `claimImage` (`convex/files.ts`) validates the **stored** file's metadata — content type must be JPEG/PNG/WebP/GIF (no SVG/HTML), size ≤ 5 MB (post) / 2 MB (avatar) — and rejects a storage id already attached to anything (so an id seen in someone's avatar URL can't be re-attached). Rejected files are deleted.
 - **Post images are private**: the UI never gets a storage URL. `<img>` points at `/api/images/[postId]`, a Next.js route that runs `files:postImageUrl` *as the viewer* (re-checking post visibility) and streams the bytes with `Cache-Control: private`, `nosniff`, and a sandboxing CSP. Invite-only community images are therefore not reachable by URL-sharing. (Closes the old public-bucket gap.)
 - **Avatars are public-by-URL** (Convex storage URLs are unguessable but unauthenticated). Deliberate: avatars are shown to every user anyway.
@@ -64,6 +65,12 @@ The browser talks to Convex directly (WebSocket) with the user's Better Auth–i
 - **Convex deployment env** (server-only): `SITE_URL`, `BETTER_AUTH_SECRET`, `RESEND_API_KEY`, `RESEND_FROM`, optional `GOOGLE_*` / `APPLE_*`. Never put these in `.env.local` or the repo.
 - **`.env.local`** (public): `CONVEX_DEPLOYMENT`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL` (optional, derived), `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_LAUNCH_MODE`.
 - Without `RESEND_API_KEY`, auth emails are **logged** to the Convex logs instead of sent (dev fallback) — never run production like that.
+
+## Rate limits
+
+- **Auth** (Better Auth, per IP): see "Rate limits" under Auth above.
+- **App writes** (`convex/lib/rateLimit.ts`, `@convex-dev/rate-limiter`, per account, token buckets): post 30/h (burst 10), comment 120/h (20), edit 60/h (20), like 300/h (60), follow 100/h (30), invite 60/h (20), create community 10/day (3), upload URL 60/h (20), profile/avatar update 30/h (10). Call `enforceRateLimit(ctx, name, viewer._id)` right after the viewer check in any new write that a script could loop; a denial throws a user-safe `ConvexError` and rolls back, so nothing is spent on failed writes.
+- **Queries can't be rate-limited in Convex** (they can't write state, and functions don't see the client IP). Public/expensive queries must stay cheap instead: `profiles:usernameAvailable` and `auth:providers` are single lookups; `search:all` is bounded (`take(20)`).
 
 ## Input validation
 
@@ -76,7 +83,6 @@ The browser talks to Convex directly (WebSocket) with the user's Better Auth–i
 - **No CAPTCHA** on signup/reserve yet — Better Auth's IP rate limit is the only anti-abuse control (TODO).
 - **`profiles:usernameAvailable` is public and not rate-limited** (Convex queries can't write). It returns only a boolean; handles are public on the platform anyway.
 - **Large cascades**: account/community deletion runs in one Convex transaction. Fine at current scale; a very large account could hit transaction limits (TODO: move to a batched/scheduled deletion).
-- **Orphaned uploads**: a file uploaded but never attached stays in storage (TODO: periodic cleanup).
 - **Legal placeholders** — `lib/legal/config.ts` contact/entity fields are not real; policy copy needs counsel review.
 - **Moderator role** is dormant (no assignment path) by design — see `DECISIONS.md` D9.
 

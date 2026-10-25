@@ -5,13 +5,18 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { deny, getViewer, isAdmin, isSuspended, requireAdmin } from "./lib/access";
 import { avatarUrl, iso } from "./lib/dto";
 import { nullable, paginated } from "./lib/returns";
+import {
+  accumulate,
+  dayKey,
+  emptyStats,
+  readStats,
+  updateStats,
+} from "./lib/reservationStats";
 import { parseOrDeny } from "./lib/validate";
 import { adminAction, signupMode } from "./schema";
+import { internal } from "./_generated/api";
 import { authComponent } from "./auth";
 import { suspendReasonSchema } from "../lib/validators/admin";
-
-/** Rows the reservation list returns (mirrors RESERVATION_LIST_LIMIT). */
-const LIST_LIMIT = 2000;
 
 export const amIAdmin = query({
   args: {},
@@ -188,7 +193,19 @@ export const auditLog = query({
 
 const DAY = 24 * 60 * 60 * 1000;
 
-/** Aggregate dashboard metrics. Admin-only. */
+const MINUTE_BUCKETS: [string, number, number][] = [
+  ["<1h", 0, 59],
+  ["1-2h", 60, 119],
+  ["2-3h", 120, 179],
+  ["3-4h", 180, 239],
+  ["4h+", 240, Infinity],
+];
+
+/**
+ * Aggregate dashboard metrics. Admin-only. Reads the precomputed
+ * `reservationStats` row (lib/reservationStats.ts) plus the top 10 referrers,
+ * so its cost doesn't grow with the number of reservations.
+ */
 export const reservationStats = query({
   args: {},
   returns: v.object({
@@ -209,95 +226,76 @@ export const reservationStats = query({
   }),
   handler: async (ctx) => {
     await requireAdmin(ctx);
-    const rows = await ctx.db.query("reservations").order("desc").take(LIST_LIMIT * 5);
+    const s = (await readStats(ctx)) ?? emptyStats();
     const now = Date.now();
-    const startOfToday = new Date(new Date(now).toISOString().slice(0, 10)).getTime();
 
-    let confirmed = 0;
-    let customized = 0;
-    const profilesById = new Map<string, { username: string }>();
-    for (const r of rows) {
-      const p = await ctx.db.get(r.profileId);
-      if (!p) continue;
-      profilesById.set(p._id, { username: p.username });
-      if (p.bio || p.avatarId) customized++;
-      const u = await authComponent.getAnyUserById(ctx, p.authUserId);
-      if (u?.emailVerified) confirmed++;
-    }
+    // Days are UTC calendar days, newest last; "last 7" includes today.
+    const days = Array.from({ length: 30 }, (_, i) => dayKey(now - (29 - i) * DAY));
+    const daily = days.map((day) => ({ day, count: s.daily[day] ?? 0 }));
+    const sumLast = (n: number) => daily.slice(-n).reduce((a, d) => a + d.count, 0);
 
-    const minutes = rows
-      .map((r) => r.dailySocialMinutes)
-      .filter((m): m is number => typeof m === "number")
-      .sort((a, b) => a - b);
-    const sum = minutes.reduce((a, b) => a + b, 0);
+    // Exact median from the per-minute histogram.
+    const histogram = Object.entries(s.minutes)
+      .map(([m, count]) => [Number(m), count] as const)
+      .sort((a, b) => a[0] - b[0]);
+    const answered = histogram.reduce((a, [, c]) => a + c, 0);
+    const nth = (k: number) => {
+      let seen = 0;
+      for (const [m, c] of histogram) {
+        seen += c;
+        if (seen > k) return m;
+      }
+      return 0;
+    };
     const median =
-      minutes.length === 0
+      answered === 0
         ? null
-        : minutes.length % 2
-          ? minutes[(minutes.length - 1) / 2]
-          : (minutes[minutes.length / 2 - 1] + minutes[minutes.length / 2]) / 2;
+        : answered % 2
+          ? nth((answered - 1) / 2)
+          : (nth(answered / 2 - 1) + nth(answered / 2)) / 2;
 
-    const reasons: Record<string, number> = {};
-    for (const r of rows) for (const reason of r.reasons) reasons[reason] = (reasons[reason] ?? 0) + 1;
-
-    const daily = Array.from({ length: 30 }, (_, i) => {
-      const dayStart = startOfToday - (29 - i) * DAY;
-      return {
-        day: new Date(dayStart).toISOString().slice(0, 10),
-        count: rows.filter((r) => r._creationTime >= dayStart && r._creationTime < dayStart + DAY).length,
-      };
-    });
-
-    const buckets: [string, number, number][] = [
-      ["<1h", 0, 59],
-      ["1-2h", 60, 119],
-      ["2-3h", 120, 179],
-      ["3-4h", 180, 239],
-      ["4h+", 240, Infinity],
-    ];
-
-    const byCode = new Map(rows.map((r) => [r.referralCode, r]));
-    const referrerCounts = new Map<string, number>();
-    for (const r of rows) {
-      if (!r.referredBy) continue;
-      const parent = byCode.get(r.referredBy);
-      const name = parent && profilesById.get(parent.profileId)?.username;
-      if (name) referrerCounts.set(name, (referrerCounts.get(name) ?? 0) + 1);
+    const top = await ctx.db
+      .query("reservations")
+      .withIndex("by_referralCount", (q) => q.gt("referralCount", 0))
+      .order("desc")
+      .take(10);
+    const top_referrers = [];
+    for (const r of top) {
+      const p = await ctx.db.get(r.profileId);
+      if (p) top_referrers.push({ username: p.username, count: r.referralCount ?? 0 });
     }
 
     return {
-      total: rows.length,
-      today: rows.filter((r) => r._creationTime >= startOfToday).length,
-      last7: rows.filter((r) => r._creationTime >= now - 7 * DAY).length,
-      last30: rows.filter((r) => r._creationTime >= now - 30 * DAY).length,
-      confirmed,
-      customized,
-      referred: rows.filter((r) => r.referredBy).length,
-      avg_minutes: minutes.length ? Math.round(sum / minutes.length) : null,
+      total: s.total,
+      today: sumLast(1),
+      last7: sumLast(7),
+      last30: sumLast(30),
+      confirmed: s.confirmed,
+      customized: s.customized,
+      referred: s.referred,
+      avg_minutes: answered ? Math.round(s.sumMinutes / answered) : null,
       median_minutes: median,
-      sum_minutes: sum,
-      reasons,
+      sum_minutes: s.sumMinutes,
+      reasons: s.reasons,
       daily,
-      minute_buckets: buckets.map(([label, lo, hi]) => ({
+      minute_buckets: MINUTE_BUCKETS.map(([label, lo, hi]) => ({
         label,
-        count: minutes.filter((m) => m >= lo && m <= hi).length,
+        count: histogram.filter(([m]) => m >= lo && m <= hi).reduce((a, [, c]) => a + c, 0),
       })),
-      top_referrers: [...referrerCounts.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10)
-        .map(([username, count]) => ({ username, count })),
+      top_referrers,
     };
   },
 });
 
 /**
- * Per-signup rows **including email** — the only path that exposes reservation
- * emails to a client, and only to allowlisted admins.
+ * Per-signup rows **including email**, newest first, paginated — the only path
+ * that exposes reservation emails to a client, and only to allowlisted admins.
  */
 export const reservationList = query({
-  args: {},
-  returns: v.array(
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginated(
     v.object({
+      id: v.string(),
       username: v.string(),
       email: v.string(),
       email_confirmed: v.boolean(),
@@ -311,19 +309,16 @@ export const reservationList = query({
       created_at: v.string(),
     })
   ),
-  handler: async (ctx) => {
+  handler: async (ctx, { paginationOpts }) => {
     await requireAdmin(ctx);
-    const rows = await ctx.db.query("reservations").order("desc").take(LIST_LIMIT);
-    const counts = new Map<string, number>();
-    for (const r of rows) {
-      if (r.referredBy) counts.set(r.referredBy, (counts.get(r.referredBy) ?? 0) + 1);
-    }
-    const out = [];
-    for (const r of rows) {
+    const result = await ctx.db.query("reservations").order("desc").paginate(paginationOpts);
+    const page = [];
+    for (const r of result.page) {
       const p = await ctx.db.get(r.profileId);
       if (!p) continue;
       const u = await authComponent.getAnyUserById(ctx, p.authUserId);
-      out.push({
+      page.push({
+        id: r._id,
         username: p.username,
         email: u?.email ?? "",
         email_confirmed: !!u?.emailVerified,
@@ -331,13 +326,62 @@ export const reservationList = query({
         daily_social_minutes: r.dailySocialMinutes ?? null,
         referral_code: r.referralCode,
         referred_by: r.referredBy ?? null,
-        referral_count: counts.get(r.referralCode) ?? 0,
+        referral_count: r.referralCount ?? 0,
         bio_set: !!p.bio,
         avatar_set: !!p.avatarId,
         created_at: iso(r._creationTime),
       });
     }
-    return out;
+    return { ...result, page };
+  },
+});
+
+/**
+ * Recompute the denormalized reservation fields (`emailConfirmed`,
+ * `customized`, `referralCount`) and the `reservationStats` row from scratch.
+ * Backfill after deploying the stats change, or repair if numbers drift:
+ *   npx convex run admin:rebuildReservationStats
+ * Works newest-first in batches, scheduling itself until done. Rows created
+ * while it runs are counted by their own signup and not visited again.
+ */
+export const rebuildReservationStats = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  returns: v.object({ processed: v.number(), done: v.boolean() }),
+  handler: async (ctx, { cursor }) => {
+    const result = await ctx.db
+      .query("reservations")
+      .order("desc")
+      .paginate({ numItems: 100, cursor: cursor ?? null });
+
+    const rows: Doc<"reservations">[] = [];
+    for (const r of result.page) {
+      const p = await ctx.db.get(r.profileId);
+      const u = p ? await authComponent.getAnyUserById(ctx, p.authUserId) : null;
+      const referralCount = (
+        await ctx.db
+          .query("reservations")
+          .withIndex("by_referredBy", (q) => q.eq("referredBy", r.referralCode))
+          .collect()
+      ).length;
+      const fields = {
+        emailConfirmed: !!u?.emailVerified,
+        customized: !!(p?.bio || p?.avatarId),
+        referralCount,
+      };
+      await ctx.db.patch(r._id, fields);
+      rows.push({ ...r, ...fields });
+    }
+    await updateStats(ctx, (s) => {
+      if (!cursor) Object.assign(s, emptyStats()); // first batch starts over
+      for (const r of rows) accumulate(s, r, 1);
+    });
+
+    if (!result.isDone) {
+      await ctx.scheduler.runAfter(0, internal.admin.rebuildReservationStats, {
+        cursor: result.continueCursor,
+      });
+    }
+    return { processed: rows.length, done: result.isDone };
   },
 });
 
