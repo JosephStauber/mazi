@@ -70,6 +70,8 @@ npx convex run admin:setSignupMode '{"mode":"open"}'
 
 ```bash
 npx convex run admin:grant '{"username":"your_handle"}'
+# a helper who can moderate but not see emails or launch tools:
+# npx convex run admin:grant '{"username":"their_handle","role":"moderator"}'
 ```
 
 ## Deploying (Vercel)

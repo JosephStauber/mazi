@@ -15,11 +15,7 @@ export default async function SuspendedPage() {
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-5 py-10">
-      <SuspendedNotice
-        username={profile.username}
-        reason={suspension.reason}
-        since={suspension.since}
-      />
+      <SuspendedNotice username={profile.username} initial={suspension} />
     </div>
   );
 }
