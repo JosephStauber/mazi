@@ -10,6 +10,9 @@ Priority buckets: **Now** (do next) · **Next** (soon) · **Later** (someday) ·
 
 ## Now
 
+- [ ] **Backfill reservation stats on every deployment that has reservations.** After the 2026-10-25 stats change deploys, run `npx convex run admin:rebuildReservationStats` (add `--prod` for production). Until then the dashboard shows only signups made after the deploy, and `reservations:mine` under-counts confirmed referrals for older rows.
+- [ ] **Decide invite-only community visibility (review H-5).** Community metadata, member lists, search results, and profile community chips are visible to every full user, even for invite-only communities (documented in SECURITY.md, but not a recorded decision). Either gate them on membership or record the choice in DECISIONS.md and make the "invite only" label say it's about joining, not discovery.
+
 - [ ] **Create your own Convex project and deployment.** Development so far ran on a local *anonymous* Convex backend. Run `npx convex dev`, log in, create the project — it rewrites `CONVEX_DEPLOYMENT` / `NEXT_PUBLIC_CONVEX_URL` in `.env.local`. Then set the deployment env vars from `docs/SETUP.md` (`SITE_URL`, `BETTER_AUTH_SECRET`). Do the same for production (`npx convex deploy`) with production values.
 - [ ] **Configure Resend.** Verify a sending domain in Resend; set `RESEND_API_KEY` and `RESEND_FROM` on each Convex deployment. Until then, confirmation/reset links only appear in the Convex logs (fine for dev, unusable for real users).
 - [ ] **Google / Apple sign-in (when ready).** Create the OAuth apps, set `GOOGLE_CLIENT_ID/SECRET` and/or `APPLE_CLIENT_ID/SECRET` (+ `APPLE_APP_BUNDLE_IDENTIFIER`) on the deployment. Redirect URIs: `<SITE_URL>/api/auth/callback/{google,apple}`. The buttons appear automatically. Untested end-to-end so far (no credentials).
@@ -22,8 +25,6 @@ Priority buckets: **Now** (do next) · **Next** (soon) · **Later** (someday) ·
 ## Next
 
 - [ ] **Batch large deletions.** Account and community deletion run in one Convex transaction (`convex/lib/accounts.ts`, `cascade.ts`). Fine now; a very large account/community could exceed transaction limits. Move to a scheduled, batched deletion (or the `@convex-dev/workflow` component) before that's plausible.
-- [ ] **Clean up orphaned uploads.** A file uploaded but never attached (abandoned composer, failed claim) stays in Convex storage. Add a cron that deletes `_storage` files older than a day that no profile/post references.
-- [ ] **Rate-limit app writes** (posts, comments, follows, invites) — e.g. `@convex-dev/rate-limiter`. Auth endpoints are limited; app mutations aren't.
 - [ ] **Community moderator management (make the `moderator` role usable).** `moderator` exists in the schema and access rules (post/comment delete, `canModerate` UI) but **nothing can assign it** — intentional (D9). To ship: a creator-only `communities:setMemberRole` mutation (member ↔ moderator, never creator), promote/demote/remove controls in `components/community/community-tabs.tsx`, optionally notify the promoted user. Revisit whether mods can remove other mods.
 - [ ] **Invite link expiry + revocation.** `communityInvites.expiresAt` exists and is honoured but never set. Let creators pick an expiry and revoke links.
 - [ ] **Block / mute users.** Needs a `blocks` table, filtering in feeds/search/notifications (in the Convex queries), and UI. Privacy-relevant — design carefully.
@@ -45,7 +46,6 @@ Priority buckets: **Now** (do next) · **Next** (soon) · **Later** (someday) ·
 
 ## Housekeeping
 
-- [ ] **Reconcile stale docs.** `README.md` and `PROJECT_OUTLINE.txt` predate the redesign and the Convex move. Update or fold into `ARCHITECTURE.md`.
 - [ ] **Fill legal placeholders** in `lib/legal/config.ts` (entity, contact, jurisdiction) and get `/legal/*` reviewed by counsel. The subprocessor list now names Convex, Resend, and Vercel (hosting + Web Analytics) — add any OAuth providers when enabled.
 - [ ] **Image compression before upload** (avatars + post images).
 - [ ] **Upgrade path for Better Auth.** `@convex-dev/better-auth@0.12.x` pins `better-auth@1.6.x`; `@better-auth/core`, `@better-auth/utils`, `better-call`, and `@better-fetch/fetch` are pinned to match in `package.json`. Bump them together when the adapter supports 1.7.
@@ -54,4 +54,4 @@ Priority buckets: **Now** (do next) · **Next** (soon) · **Later** (someday) ·
 
 ## Recently done
 
-Full history in [`DEVLOG.md`](DEVLOG.md). Latest: **dependency CVE bump** (2026-10-25) — `next` 16.4.3, `zod` 4.6.7, transitive fixes; `npm audit` clean. Before that: **Supabase → Convex + Better Auth + Resend migration** (2026-10-24) — new backend in `convex/`, reactive UI, passkeys, OAuth scaffolding, private post-image delivery (closes the public-bucket gap), server-side notifications.
+Full history in [`DEVLOG.md`](DEVLOG.md). Latest: **High review findings H-2/H-3/H-4/H-6** (2026-10-25) — per-account write rate limits, orphaned-upload sweep, precomputed admin stats, docs cleanup. Before that: **dependency CVE bump** (2026-10-25) — `next` 16.4.3, `zod` 4.6.7, transitive fixes; `npm audit` clean. Before that: **Supabase → Convex + Better Auth + Resend migration** (2026-10-24) — new backend in `convex/`, reactive UI, passkeys, OAuth scaffolding, private post-image delivery (closes the public-bucket gap), server-side notifications.

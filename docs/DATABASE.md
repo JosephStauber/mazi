@@ -25,12 +25,16 @@ Every document has `_id` and `_creationTime` (used as the timestamp everywhere).
 | `likes` | `postId`, `userId` | `by_post_user`, `by_user` |
 | `follows` | `followerId`, `followingId` | `by_follower_following`, `by_follower`, `by_following` |
 | `notifications` | `userId` (recipient), `actorId?`, `type`, `postId?`, `commentId?`, `communityId?`, `inviteId?`, `read` | `by_user`, `by_user_read`, `by_actor`, `by_post`, `by_comment`, `by_community` |
-| `reservations` | `profileId`, `reasons[]`, `dailySocialMinutes?`, `referralCode`, `referredBy?` | `by_profile`, `by_referralCode`, `by_referredBy` |
+| `reservations` | `profileId`, `reasons[]`, `dailySocialMinutes?`, `referralCode`, `referredBy?`; denormalized `emailConfirmed?`, `customized?`, `referralCount?` | `by_profile`, `by_referralCode`, `by_referredBy`, `by_referralCount` |
+| `reservationStats` | `key: "singleton"`, `total`, `confirmed`, `customized`, `referred`, `sumMinutes`, histograms `minutes` / `reasons` / `daily` (UTC day, last 60 days) | `by_key` |
+| `jobState` | `key` (e.g. `"uploadSweep"`), `cursor` — progress of background jobs | `by_key` |
 | `adminUsers` | `profileId` | `by_profile` |
 | `adminActions` | audit log: `actorId?` (unset = CLI), `action` (`suspend`\|`unsuspend`\|`grant_admin`\|`set_signup_mode`), `targetId?`, `targetUsername?` (snapshot), `reason?`, `details?` | `by_actor`, `by_target` |
 | `appConfig` | `key: "singleton"`, `signupMode` (`reservation`\|`open`) | `by_key` |
 
 **Denormalized counters** (`likeCount`, `commentCount`, `memberCount`, `postCount`, `followerCount`, `followingCount`) are maintained by the mutations and the cascade helpers (`convex/lib/cascade.ts`) — Convex has no `count(*)`. Any new write path that adds/removes a like, comment, member, post, or follow must adjust them (use `bump`).
+
+**Reservation dashboard stats** are precomputed (`convex/lib/reservationStats.ts`) so `admin:reservationStats` reads one row instead of joining every reservation to its profile and auth user (which broke Convex's per-query read limits at ~2,000 rows). The row and the per-reservation flags are updated in the same transaction by: signup (`createProfileForAuthUser`), email verification (`user.onUpdate` trigger), bio/avatar changes (`profiles:update` / `setAvatar` → `syncReservationCustomized`), and erasure. A new path that creates/deletes a reservation or changes one of those facts must go through these helpers. **`npx convex run admin:rebuildReservationStats`** recomputes everything from the rows (backfill after deploying, or repair); it runs in batches, newest first. An erasure that lands mid-rebuild on a not-yet-visited row can leave a count off by one — rerun it when quiet.
 
 **No email column anywhere in app tables** — email lives only in the Better Auth `user` table. `admin:reservationList` is the only function that joins it in.
 

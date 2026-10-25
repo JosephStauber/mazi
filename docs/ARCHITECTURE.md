@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How Mazi is wired. This is the living overview — trust it over `README.md` / `PROJECT_OUTLINE.txt` (which are older). For schema specifics see [`DATABASE.md`](DATABASE.md); for the trust model see [`SECURITY.md`](SECURITY.md); for the "why" behind big choices see [`DECISIONS.md`](DECISIONS.md).
+How Mazi is wired. This is the living overview; `README.md` is only a short front page that links here. For schema specifics see [`DATABASE.md`](DATABASE.md); for the trust model see [`SECURITY.md`](SECURITY.md); for the "why" behind big choices see [`DECISIONS.md`](DECISIONS.md).
 
 ## Stack
 

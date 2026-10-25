@@ -11,6 +11,7 @@ import {
 import { bump, deleteCommunityCascade, removeMembership } from "./lib/cascade";
 import { refLoader, toCommunityDTO } from "./lib/dto";
 import { notify } from "./lib/notify";
+import { enforceRateLimit } from "./lib/rateLimit";
 import { communityRoleV, communityV, paginated, profileRefV } from "./lib/returns";
 import { randomToken } from "./lib/signup";
 import { parseOrDeny } from "./lib/validate";
@@ -80,6 +81,7 @@ export const create = mutation({
   returns: v.object({ slug: v.string() }),
   handler: async (ctx, args) => {
     const viewer = await requireFullAccess(ctx);
+    await enforceRateLimit(ctx, "createCommunity", viewer._id);
     const data = parseOrDeny(createCommunitySchema, {
       name: args.name.trim(),
       description: args.description?.trim() || undefined,
@@ -189,6 +191,7 @@ export const inviteByUsername = mutation({
   returns: v.null(),
   handler: async (ctx, { communityId, username }) => {
     const viewer = await requireModerator(ctx, communityId);
+    await enforceRateLimit(ctx, "invite", viewer._id);
     const target = await ctx.db
       .query("profiles")
       .withIndex("by_usernameLower", (q) => q.eq("usernameLower", username.trim().toLowerCase()))
@@ -226,6 +229,7 @@ export const createInviteLink = mutation({
   returns: v.string(),
   handler: async (ctx, { communityId }) => {
     const viewer = await requireModerator(ctx, communityId);
+    await enforceRateLimit(ctx, "invite", viewer._id);
     const token = randomToken(24);
     await ctx.db.insert("communityInvites", {
       communityId,

@@ -22,7 +22,7 @@ npx convex dev
 
 The first run asks you to log in and pick or create a project, then writes `CONVEX_DEPLOYMENT` and `NEXT_PUBLIC_CONVEX_URL` to `.env.local`. Leave it running: it pushes `convex/` on every save and tails the function logs.
 
-Add the rest of `.env.local` yourself (all public):
+Add the rest of `.env.local` yourself (all public; [`.env.example`](../.env.example) has the full list):
 
 ```
 # NEXT_PUBLIC_CONVEX_SITE_URL=https://<deployment>.convex.site  # optional — derived from NEXT_PUBLIC_CONVEX_URL if unset

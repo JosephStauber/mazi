@@ -173,10 +173,44 @@ export default defineSchema({
     dailySocialMinutes: v.optional(v.number()),
     referralCode: v.string(),
     referredBy: v.optional(v.string()),
+    // Denormalized so the admin dashboard never joins profiles/auth users per
+    // row (see lib/reservationStats.ts). Optional until the backfill
+    // `admin:rebuildReservationStats` has run on older rows.
+    emailConfirmed: v.optional(v.boolean()),
+    customized: v.optional(v.boolean()),
+    /** Reservations that signed up with this row's referral code. */
+    referralCount: v.optional(v.number()),
   })
     .index("by_profile", ["profileId"])
     .index("by_referralCode", ["referralCode"])
-    .index("by_referredBy", ["referredBy"]),
+    .index("by_referredBy", ["referredBy"])
+    .index("by_referralCount", ["referralCount"]),
+
+  /**
+   * Running totals for the reservation dashboard (one row, key "singleton"),
+   * kept in step by the mutations that create, confirm, customize, or erase a
+   * reservation. Histograms are keyed by minute value, reason id, and UTC day.
+   */
+  reservationStats: defineTable({
+    key: v.string(),
+    total: v.number(),
+    confirmed: v.number(),
+    customized: v.number(),
+    referred: v.number(),
+    sumMinutes: v.number(),
+    minutes: v.record(v.string(), v.number()),
+    reasons: v.record(v.string(), v.number()),
+    daily: v.record(v.string(), v.number()),
+  }).index("by_key", ["key"]),
+
+  /**
+   * Progress markers for background jobs (crons.ts), e.g. key "uploadSweep":
+   * `cursor` is the `_creationTime` of the last `_storage` file checked.
+   */
+  jobState: defineTable({
+    key: v.string(),
+    cursor: v.number(),
+  }).index("by_key", ["key"]),
 
   /** Admin allowlist (reservation dashboard). Seeded with `admin:grant`. */
   adminUsers: defineTable({
