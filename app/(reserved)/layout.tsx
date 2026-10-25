@@ -14,6 +14,7 @@ export default async function ReservedLayout({
 }) {
   const profile = await fetchAuthQuery(api.profiles.me);
   if (!profile) redirect("/login");
+  if (await fetchAuthQuery(api.account.mySuspension)) redirect("/suspended");
   if (profile.access_level === "full") redirect("/home");
 
   return (

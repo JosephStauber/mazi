@@ -10,6 +10,7 @@ export default async function ProtectedLayout({
 }) {
   const profile = await fetchAuthQuery(api.profiles.me);
   if (!profile) redirect("/login");
+  if (await fetchAuthQuery(api.account.mySuspension)) redirect("/suspended");
   // Reserved (pre-launch) accounts can't use the app yet — hold them in the
   // limited welcome area. The Convex functions are the real enforcement
   // (requireFullAccess); this is the UX layer.

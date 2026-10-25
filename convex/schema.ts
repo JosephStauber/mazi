@@ -38,6 +38,12 @@ export const notificationType = v.union(
   v.literal("mention")
 );
 export const signupMode = v.union(v.literal("reservation"), v.literal("open"));
+export const adminAction = v.union(
+  v.literal("suspend"),
+  v.literal("unsuspend"),
+  v.literal("grant_admin"),
+  v.literal("set_signup_mode")
+);
 
 export default defineSchema({
   profiles: defineTable({
@@ -52,11 +58,16 @@ export default defineSchema({
     followerCount: v.number(),
     followingCount: v.number(),
     postCount: v.number(),
+    /** Set while an admin has suspended the account (see `isSuspended`). */
+    suspendedAt: v.optional(v.number()),
+    /** Statement of reasons, shown to the suspended user. */
+    suspendedReason: v.optional(v.string()),
   })
     .index("by_authUserId", ["authUserId"])
     .index("by_usernameLower", ["usernameLower"])
     .index("by_avatar", ["avatarId"])
     .index("by_accessLevel", ["accessLevel"])
+    .index("by_suspendedAt", ["suspendedAt"])
     .searchIndex("search_username", { searchField: "username" }),
 
   communities: defineTable({
@@ -171,6 +182,23 @@ export default defineSchema({
   adminUsers: defineTable({
     profileId: v.id("profiles"),
   }).index("by_profile", ["profileId"]),
+
+  /**
+   * Audit log: one row per privileged action, written in the same mutation as
+   * the action. `actorId` is unset for CLI/dashboard runs. `targetUsername` is
+   * a snapshot so the record survives the target renaming or erasing their
+   * account (the erasure cascade unsets `targetId`/`actorId`, not the row).
+   */
+  adminActions: defineTable({
+    actorId: v.optional(v.id("profiles")),
+    action: adminAction,
+    targetId: v.optional(v.id("profiles")),
+    targetUsername: v.optional(v.string()),
+    reason: v.optional(v.string()),
+    details: v.optional(v.string()),
+  })
+    .index("by_actor", ["actorId"])
+    .index("by_target", ["targetId"]),
 
   /**
    * Single-row server config. `signupMode` decides the tier new accounts get —

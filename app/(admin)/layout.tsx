@@ -2,9 +2,10 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/convex/_generated/api";
 import { fetchAuthQuery } from "@/lib/auth-server";
+import { AdminNav } from "@/components/admin/admin-nav";
 
 /**
- * Admin-only area (reservation dashboard). Auth is required, and the admin
+ * Admin-only area (users, reservations, audit log). Auth is required, and the admin
  * allowlist is the gate — a non-admin gets a 404, so the area's existence
  * isn't advertised. The Convex queries it calls are independently admin-guarded.
  */
@@ -35,7 +36,10 @@ export default async function AdminLayout({
           </Link>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl px-5 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-6xl px-5 py-8">
+        <AdminNav />
+        {children}
+      </main>
     </div>
   );
 }

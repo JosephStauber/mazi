@@ -6,7 +6,7 @@ import { v, type Validator } from "convex/values";
  * field the UI doesn't need (e.g. a raw document with `authUserId`).
  */
 
-const nullable = <T extends Validator<unknown, "required", string>>(t: T) =>
+export const nullable = <T extends Validator<unknown, "required", string>>(t: T) =>
   v.union(t, v.null());
 
 export const profileRefV = v.object({
