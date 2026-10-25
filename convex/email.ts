@@ -9,7 +9,7 @@ import type { ActionCtx } from "./_generated/server";
  * Env (set on the Convex deployment, never in the repo):
  *   RESEND_API_KEY  — without it, emails are logged to the Convex dashboard
  *                     logs instead of sent (local development fallback).
- *   RESEND_FROM     — e.g. "Mazi <hello@yourdomain.com>". Defaults to Resend's
+ *   RESEND_FROM     — e.g. "Mazi <hello@mazi.social>". Defaults to Resend's
  *                     shared test sender, which only delivers to your own address.
  */
 export const resend = new Resend(components.resend, { testMode: false });

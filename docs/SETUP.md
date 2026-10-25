@@ -48,7 +48,7 @@ npx convex env set BETTER_AUTH_SECRET=<random 32+ bytes, e.g. openssl rand -base
 | `SITE_URL` | yes | The app's origin. Used for auth redirects, trusted origins, and the passkey relying-party id. Must match the URL you browse. |
 | `BETTER_AUTH_SECRET` | yes | Signs sessions/tokens. Different per deployment; never commit it. |
 | `RESEND_API_KEY` | for real email | Without it, confirmation/reset links are **logged** in `npx convex dev` instead of sent. |
-| `RESEND_FROM` | for real email | e.g. `Mazi <hello@yourdomain.com>` on a domain verified in Resend. Default `onboarding@resend.dev` only delivers to your own Resend address. |
+| `RESEND_FROM` | for real email | `Mazi <hello@mazi.social>` (`mazi.social` must be verified in Resend). Set it quoted: `npx convex env set --prod "RESEND_FROM=Mazi <hello@mazi.social>"`. Default `onboarding@resend.dev` only delivers to your own Resend address. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional | Turns on "Continue with Google". Redirect URI: `<SITE_URL>/api/auth/callback/google`. |
 | `APPLE_CLIENT_ID` / `APPLE_CLIENT_SECRET` (+ `APPLE_APP_BUNDLE_IDENTIFIER`) | optional | Turns on "Continue with Apple". Redirect URI: `<SITE_URL>/api/auth/callback/apple`. |
 
