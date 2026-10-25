@@ -30,6 +30,8 @@ Priority buckets: **Now** (do next) · **Next** (soon) · **Later** (someday) ·
 - [ ] **Content reporting flow (DSA notice-and-action).** Report UI on posts/comments, a `reports` table, a reviewer queue in the admin panel (actions write to `adminActions`; suspension already exists).
 - [ ] **Admin panel: next slices.** Admin delete of posts/comments + community takedown/ownership transfer (audited); a Launch page for `setSignupMode` + promote batch with a remaining-count (and read the mode from `appConfig` instead of `NEXT_PUBLIC_LAUNCH_MODE`); revoke-admin from the UI (granting stays CLI-only); aggregate health stats from counters rather than table scans.
 - [ ] **Suspension: legal copy.** Mention suspension, the shown statement of reasons, and audit-log retention (rows survive account erasure, keyed by a username snapshot) in `/legal/privacy` + terms. `legal.contactEmail` is shown on `/suspended` for appeals.
+- [ ] **Private post images survive logout in the browser cache.** `/api/images/[postId]` sends `Cache-Control: private, max-age=3600`, so on a shared device the next person to sign in can still load a members-only image from cache for up to an hour (the server correctly 404s a fresh request). Consider `no-store`, or a short max-age plus `Vary: Cookie`; weigh against re-fetching images on every view.
+- [ ] **Avatars don't render against a local Convex backend.** Next's image optimizer refuses private-IP sources (400 "url parameter is not allowed", same on 16.2 and 16.4), and `next.config.ts` hard-codes port 3210, while a second local backend picks 3215+. Dev-only (prod uses `*.convex.cloud`); fix with `unoptimized` for local URLs or derive the pattern from `NEXT_PUBLIC_CONVEX_URL` (also covers review L-14).
 - [ ] **Following feed cap.** `feed:following` merges at most 2000 followed authors' streams. Fine for small communities; revisit (fan-out-on-write timeline table) if follow counts grow large.
 
 ## Later
@@ -52,4 +54,4 @@ Priority buckets: **Now** (do next) · **Next** (soon) · **Later** (someday) ·
 
 ## Recently done
 
-Full history in [`DEVLOG.md`](DEVLOG.md). Latest: **Supabase → Convex + Better Auth + Resend migration** (2026-10-24) — new backend in `convex/`, reactive UI, passkeys, OAuth scaffolding, private post-image delivery (closes the public-bucket gap), server-side notifications.
+Full history in [`DEVLOG.md`](DEVLOG.md). Latest: **dependency CVE bump** (2026-10-25) — `next` 16.4.3, `zod` 4.6.7, transitive fixes; `npm audit` clean. Before that: **Supabase → Convex + Better Auth + Resend migration** (2026-10-24) — new backend in `convex/`, reactive UI, passkeys, OAuth scaffolding, private post-image delivery (closes the public-bucket gap), server-side notifications.
