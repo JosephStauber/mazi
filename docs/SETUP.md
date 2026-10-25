@@ -72,6 +72,13 @@ npx convex run admin:setSignupMode '{"mode":"open"}'
 npx convex run admin:grant '{"username":"your_handle"}'
 ```
 
+## Deploying (Vercel)
+
+`vercel.json` sets the build command: when `CONVEX_DEPLOY_KEY` is present it runs `npx convex deploy --cmd 'npm run build'` (pushes the Convex functions, then builds Next.js with `NEXT_PUBLIC_CONVEX_URL` injected); otherwise it's a plain `npm run build`.
+
+- **Production:** add `CONVEX_DEPLOY_KEY` (Convex dashboard → prod deployment → Settings → Deploy Keys) to Vercel's **Production** environment only, and set `NEXT_PUBLIC_APP_URL` to the production URL. On the Convex **prod** deployment set `SITE_URL` (the production URL), `BETTER_AUTH_SECRET`, `RESEND_API_KEY`, `RESEND_FROM`.
+- **Preview:** no deploy key, so previews never touch production. They build against the **dev** deployment via `NEXT_PUBLIC_CONVEX_URL` in Vercel's Preview environment. Auth on previews is limited — the dev deployment's `SITE_URL` is localhost, so sign-in redirects point there.
+
 ## Verify a change before you're done
 
 ```bash
