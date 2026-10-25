@@ -1,6 +1,6 @@
 import { Resend } from "@convex-dev/resend";
 import { components } from "./_generated/api";
-import type { ActionCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
 
 /**
  * Transactional auth email via Resend (durable queue + retries). Only the
@@ -81,4 +81,34 @@ export async function sendResetPassword(
       url
     ),
   });
+}
+
+/**
+ * Plain notice email (moderation decisions, the one-off launch announcement).
+ * Text only: no images, no tracking pixels, no link rewriting. Works from a
+ * mutation — Resend's queue sends it after the transaction commits.
+ */
+export async function sendNotice(
+  ctx: MutationCtx,
+  {
+    to,
+    subject,
+    paragraphs,
+    footer,
+  }: { to: string; subject: string; paragraphs: string[]; footer?: string }
+) {
+  if (!process.env.RESEND_API_KEY) {
+    console.log(`[email not sent: RESEND_API_KEY unset] to=${to} subject="${subject}"\n${paragraphs.join("\n\n")}`);
+    return;
+  }
+  const html = `<!doctype html><html><body style="margin:0;background:#f6f3ee;font-family:Helvetica,Arial,sans-serif;color:#1a1714">
+<div style="max-width:480px;margin:0 auto;padding:40px 24px">
+<p style="font-family:Georgia,serif;font-size:28px;margin:0 0 24px">mazi<span style="color:#d9472b">.</span></p>
+${paragraphs
+  .map((p) => `<p style="font-size:15px;line-height:1.6;margin:0 0 16px;white-space:pre-wrap">${escapeHtml(p)}</p>`)
+  .join("\n")}
+${footer ? `<p style="font-size:12px;color:#6b645c;margin:28px 0 0">${escapeHtml(footer)}</p>` : ""}
+</div></body></html>`;
+  const text = [...paragraphs, ...(footer ? [footer] : [])].join("\n\n");
+  await resend.sendEmail(ctx, { from: FROM(), to, subject, html, text });
 }

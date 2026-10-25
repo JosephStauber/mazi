@@ -73,21 +73,40 @@ export async function getFullAccessViewer(ctx: QueryCtx): Promise<Viewer | null>
   return viewer?.accessLevel === "full" && !isSuspended(viewer) ? viewer : null;
 }
 
-/** On the admin allowlist (`adminUsers`, seeded with `admin:grant`). */
-export async function isAdmin(ctx: QueryCtx, profileId: Id<"profiles">) {
+export type AdminRole = "owner" | "moderator";
+
+/** Admin role from the allowlist (`adminUsers`, seeded with `admin:grant`), or null. */
+export async function getAdminRole(
+  ctx: QueryCtx,
+  profileId: Id<"profiles">
+): Promise<AdminRole | null> {
   const row = await ctx.db
     .query("adminUsers")
     .withIndex("by_profile", (q) => q.eq("profileId", profileId))
     .unique();
-  return row !== null;
+  return row ? (row.role ?? "owner") : null;
 }
 
-/** Signed-in admin. Every public function in `admin.ts` starts with this. */
+export async function isAdmin(ctx: QueryCtx, profileId: Id<"profiles">) {
+  return (await getAdminRole(ctx, profileId)) !== null;
+}
+
+/**
+ * Signed-in, unsuspended admin (either role). Every public admin function
+ * starts with this or `requireOwner`.
+ */
 export async function requireAdmin(ctx: QueryCtx): Promise<Viewer> {
   const viewer = await getViewer(ctx);
   if (!viewer || isSuspended(viewer) || !(await isAdmin(ctx, viewer._id))) {
     deny("Not authorized");
   }
+  return viewer;
+}
+
+/** Admin with the `owner` role: emails, launch tools, handles, removals. */
+export async function requireOwner(ctx: QueryCtx): Promise<Viewer> {
+  const viewer = await requireAdmin(ctx);
+  if ((await getAdminRole(ctx, viewer._id)) !== "owner") deny("Owners only");
   return viewer;
 }
 

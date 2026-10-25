@@ -1,7 +1,11 @@
 import { v } from "convex/values";
-import { query } from "./_generated/server";
-import { getViewer, requireAccountOwner } from "./lib/access";
+import { mutation, query, type QueryCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
+import { deny, getViewer, isSuspended, requireAccountOwner } from "./lib/access";
 import { iso } from "./lib/dto";
+import { parseOrDeny } from "./lib/validate";
+import { appealStatus } from "./schema";
+import { appealSchema } from "../lib/validators/admin";
 import { authComponent } from "./auth";
 import { legal } from "../lib/legal/config";
 
@@ -68,13 +72,61 @@ export const exportMyData = query({
   },
 });
 
-/** The caller's suspension notice (statement of reasons), or null if not suspended. */
+/** The current suspension's latest appeal, if any. */
+async function currentAppeal(ctx: QueryCtx, me: Doc<"profiles">) {
+  if (me.suspendedAt === undefined) return null;
+  const latest = await ctx.db
+    .query("appeals")
+    .withIndex("by_profile", (q) => q.eq("profileId", me._id))
+    .order("desc")
+    .first();
+  return latest && latest._creationTime >= me.suspendedAt ? latest : null;
+}
+
+/** The caller's suspension notice (statement of reasons + appeal), or null if not suspended. */
 export const mySuspension = query({
   args: {},
-  returns: v.union(v.null(), v.object({ reason: v.union(v.string(), v.null()), since: v.string() })),
+  returns: v.union(
+    v.null(),
+    v.object({
+      reason: v.union(v.string(), v.null()),
+      since: v.string(),
+      until: v.union(v.string(), v.null()),
+      appeal: v.union(
+        v.null(),
+        v.object({
+          status: appealStatus,
+          response: v.union(v.string(), v.null()),
+          created_at: v.string(),
+        })
+      ),
+    })
+  ),
   handler: async (ctx) => {
     const me = await getViewer(ctx);
-    if (me?.suspendedAt === undefined) return null;
-    return { reason: me.suspendedReason ?? null, since: iso(me.suspendedAt) };
+    if (!me || me.suspendedAt === undefined) return null;
+    const appeal = await currentAppeal(ctx, me);
+    return {
+      reason: me.suspendedReason ?? null,
+      since: iso(me.suspendedAt),
+      until: me.suspendedUntil !== undefined ? iso(me.suspendedUntil) : null,
+      appeal: appeal
+        ? { status: appeal.status, response: appeal.response ?? null, created_at: iso(appeal._creationTime) }
+        : null,
+    };
+  },
+});
+
+/** A suspended user appeals their current suspension — once per suspension. */
+export const submitAppeal = mutation({
+  args: { body: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { body }) => {
+    const me = await requireAccountOwner(ctx);
+    if (!isSuspended(me)) deny("Your account isn't suspended");
+    if (await currentAppeal(ctx, me)) deny("You've already appealed this suspension");
+    const text = parseOrDeny(appealSchema, body);
+    await ctx.db.insert("appeals", { profileId: me._id, body: text, status: "open" });
+    return null;
   },
 });

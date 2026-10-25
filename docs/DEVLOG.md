@@ -17,6 +17,14 @@ The running memory of the project. **Every meaningful change gets an entry**, ne
 
 ## Entries
 
+## 2026-10-25 — Merge the admin panel batch into main (after the High-findings fixes)
+**By:** Claude (agent)
+**Summary:** The admin panel batch (commit `4483711`, entry below) was pushed to the `claude/admin-panel-ideas-f8df36` branch after its PR (#10) had already merged, so it never reached `main`. Merged it on top of the High review findings (#12). Conflicts resolved by keeping #12's precomputed, paginated reservation stats/list behind the batch's owner-only checks (`requireOwner`, `OwnerOnly`); `crons.ts` keeps both jobs (upload sweep + suspension expiry); docs keep both sides.
+**Fixed in the merge:** `admin:resetProfile` cleared bio/avatar without telling the reservation stats, so the dashboard's "customized" count would drift; it now calls `syncReservationCustomized`.
+**Checked:** the batch's only user-callable mutation (`account:submitAppeal`) is already bounded (suspended only, one per suspension, validated text), so it gets no rate limit.
+**Verify:** `tsc`, `eslint` (0 errors), `next build` clean; codegen matched the merged `api.d.ts`. On a local anonymous backend: owner reads reservation stats/list; moderator gets "Owners only" for both; dave sets bio (customized 1→2), admin resets it (2→1) and the audit log shows the reset with its reason; `expireSuspensions` and `sweepOrphanedUploads` run; `/admin/reservations` renders under `OwnerOnly` with the full new nav, stats, and paginated table; `/admin/users/[id]` renders.
+**Follow-ups:** none new — the backfill (`admin:rebuildReservationStats`) and the batch's own follow-ups (Resend key, moderation legal copy, step-up auth) are in TODO.
+
 ## 2026-10-25 — High review findings: docs (H-6), admin stats (H-4), uploads (H-3), rate limits (H-2)
 **By:** Claude (agent)
 **Summary:** Fixed four of the six High findings from the 2026-10-24 code review (H-1 was the dependency bump; H-5 is left for a product decision, now in TODO).
@@ -36,6 +44,34 @@ The running memory of the project. **Every meaningful change gets an entry**, ne
 **Why:** Critical/high advisories reachable in a default Next deployment; blocks any public deploy.
 **Verify:** `tsc` clean; `eslint` 0 errors; `next build` clean; `next start` serves `/`, `/login`, `/reserve`, `/legal/privacy`, and `proxy.ts` still redirects signed-out `/home` + `/api/images/*` to `/login`. Exercised on a local anonymous Convex backend + `next dev` (16.4.3): reserve funnel signup → logged confirm link → `/welcome`; reserved user bounced off `/home`; `setSignupMode` open+promote and `admin:grant`; post with image + @mention (notification written), like/unlike, comment; avatar upload; invite-only community + image post (member 200, non-member 404 on `/api/images`, "Post not found" page); admin Users/Reservations/Audit render, non-admin gets 404; log out / log in (the `window.location` reloads); forgot-password → logged link → reset → log in with new password; account deletion erased profile, notifications, and auth user. **Not exercised:** passkeys, OAuth, data-export download, suspension. The newer `eslint-config-next` adds `no-location-assign-relative-destination`, which warns on 6 deliberate `window.location.href` full reloads after sign-in/out/delete (needed so server layouts see the new cookie) — left as-is.
 **Follow-ups:** found while testing, both pre-existing (added to TODO): post images are browser-cached after logout; avatars don't render against a local backend.
+
+## 2026-10-25 — Admin panel batch: user pages, timed suspensions, appeals, roles, communities, handles, launch email
+**By:** Claude (agent)
+**Summary:** Built 13 admin improvements on top of the first slice.
+- **Users:** per-user page `/admin/users/[id]` with history, notes, appeals, created communities, profile reset, and an owner-only, audited email reveal. The list gets an All / New (24h) / Suspended filter and flags very active new accounts.
+- **Suspensions:** 24h / 7d / 30d / until restored, lifted by a cron. Suspending signs the user out everywhere, and suspend / restore / appeal / reset / takedown decisions are emailed (plain text, no tracking).
+- **Appeals:** one per suspension, filed from `/suspended`, resolved in an admin queue.
+- **Admin roles:** `owner` vs `moderator`; owner-only tools are emails, reservations, handles, community removal/transfer, the launch email and CSV export.
+- **Communities tab:** metadata only, plus takedown and ownership transfer.
+- **Blocked handles:** a built-in list plus admin exact/substring rules, enforced at signup, in the availability check and on rename.
+- **Audit log:** action and per-user filters, user links, CSV export.
+- **Launch email:** one-time, to everyone who reserved, with a test send first.
+- **Polish:** the compact filter control replaces the full-width tabs.
+**Backend:** `convex/lib/moderation.ts` (audit, emailOf, revokeSessions, suspendProfile, liftSuspension, notifyByEmail), `convex/lib/handles.ts`, `getAdminRole` / `requireOwner` in `access.ts`, new modules `adminAppeals`, `adminCommunities`, `adminHandles`, `adminAnnouncements`, `crons.ts`. `sendNotice` in `email.ts`. `admin:amIAdmin` → `admin:myRole`; `admin:grant` takes an optional `role`.
+**Schema:** `profiles.suspendedUntil?` + index; `adminUsers.role?`; new tables `adminNotes`, `appeals`, `blockedHandles`, `announcements`; `adminActions` gains actions and `by_action` / `by_target_action`. All additive — **no migration**. Existing admins are treated as `owner`.
+**Not done:** assigning community moderators from the admin panel — it would override the standing "moderator role is dormant" decision (CLAUDE.md), so it's left for a separate call. Step-up re-auth wasn't requested; tracked in TODO.
+**Verify:** `tsc`, `eslint`, `next build` clean. Exercised on a local anonymous Convex backend with owner, moderator, target and reserved test accounts:
+- role limits (moderator denied email reveal / reservations / handles / takedown / announcements; nav hides owner tabs)
+- appeal → accept (restores + email) and the one-appeal guard; the UI appeal on `/suspended` updated live and acceptance redirected to `/home`
+- timed suspension from the UI, plus expiry via the cron function (backdated with a throwaway function, since deleted)
+- session revoke (target's sessions 2 → 0, others intact)
+- profile reset (bio + random handle)
+- blocked handles at signup / availability / rename
+- community transfer (member-only) and takedown
+- launch email (test send, batch to the verified reserved user, second send refused)
+- audit filters + export
+Emails were checked in the logs (no Resend key locally).
+**Follow-ups:** set `RESEND_API_KEY`; legal copy for moderation; step-up auth; see TODO.
 
 ## 2026-10-24 — Admin panel foundation: nav, audit log, Users page with suspend
 **By:** Claude (agent)

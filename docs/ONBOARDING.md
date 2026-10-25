@@ -80,6 +80,8 @@ An admin-only view of the waitlist (own route group `app/(admin)/`, wide chrome)
 **Seed the first admin** (once — this is a privilege grant, do it deliberately; you need a Mazi account first):
 ```bash
 npx convex run admin:grant '{"username":"your_handle"}'
+# a helper who can moderate but not see emails or launch tools:
+# npx convex run admin:grant '{"username":"their_handle","role":"moderator"}'
 ```
 Add `--prod` for the production deployment. Until an admin is seeded, `/admin/reservations` 404s.
 

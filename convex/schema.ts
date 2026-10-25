@@ -42,8 +42,25 @@ export const adminAction = v.union(
   v.literal("suspend"),
   v.literal("unsuspend"),
   v.literal("grant_admin"),
-  v.literal("set_signup_mode")
+  v.literal("set_signup_mode"),
+  v.literal("reveal_email"),
+  v.literal("reset_profile"),
+  v.literal("appeal_accepted"),
+  v.literal("appeal_rejected"),
+  v.literal("community_takedown"),
+  v.literal("community_transfer"),
+  v.literal("block_handle"),
+  v.literal("unblock_handle"),
+  v.literal("announcement_sent")
 );
+/** `owner` can do everything; `moderator` can't see emails or run launch/handle/community-removal tools. */
+export const adminRole = v.union(v.literal("owner"), v.literal("moderator"));
+export const appealStatus = v.union(
+  v.literal("open"),
+  v.literal("accepted"),
+  v.literal("rejected")
+);
+export const handleMatch = v.union(v.literal("exact"), v.literal("contains"));
 
 export default defineSchema({
   profiles: defineTable({
@@ -62,12 +79,15 @@ export default defineSchema({
     suspendedAt: v.optional(v.number()),
     /** Statement of reasons, shown to the suspended user. */
     suspendedReason: v.optional(v.string()),
+    /** Timed suspension end; unset = until an admin restores it. Lifted by cron. */
+    suspendedUntil: v.optional(v.number()),
   })
     .index("by_authUserId", ["authUserId"])
     .index("by_usernameLower", ["usernameLower"])
     .index("by_avatar", ["avatarId"])
     .index("by_accessLevel", ["accessLevel"])
     .index("by_suspendedAt", ["suspendedAt"])
+    .index("by_suspendedUntil", ["suspendedUntil"])
     .searchIndex("search_username", { searchField: "username" }),
 
   communities: defineTable({
@@ -215,7 +235,45 @@ export default defineSchema({
   /** Admin allowlist (reservation dashboard). Seeded with `admin:grant`. */
   adminUsers: defineTable({
     profileId: v.id("profiles"),
+    /** Unset ⇒ `owner` (rows granted before roles existed). */
+    role: v.optional(adminRole),
   }).index("by_profile", ["profileId"]),
+
+  /** Private admin notes about an account. Deleted with the account. */
+  adminNotes: defineTable({
+    targetId: v.id("profiles"),
+    authorId: v.optional(v.id("profiles")),
+    body: v.string(),
+  })
+    .index("by_target", ["targetId"])
+    .index("by_author", ["authorId"]),
+
+  /** A suspended user's appeal. One open appeal per suspension. */
+  appeals: defineTable({
+    profileId: v.id("profiles"),
+    body: v.string(),
+    status: appealStatus,
+    response: v.optional(v.string()),
+    resolvedAt: v.optional(v.number()),
+  })
+    .index("by_profile", ["profileId"])
+    .index("by_status", ["status"]),
+
+  /** Handles nobody can sign up with or rename to (on top of the built-in list). */
+  blockedHandles: defineTable({
+    handleLower: v.string(),
+    match: handleMatch,
+    note: v.optional(v.string()),
+  }).index("by_handle", ["handleLower"]),
+
+  /** One-off emails to everyone who reserved. `kind` is unique (one launch email). */
+  announcements: defineTable({
+    kind: v.literal("launch"),
+    subject: v.string(),
+    body: v.string(),
+    status: v.union(v.literal("sending"), v.literal("sent")),
+    recipients: v.number(),
+  }).index("by_kind", ["kind"]),
 
   /**
    * Audit log: one row per privileged action, written in the same mutation as
@@ -232,7 +290,9 @@ export default defineSchema({
     details: v.optional(v.string()),
   })
     .index("by_actor", ["actorId"])
-    .index("by_target", ["targetId"]),
+    .index("by_target", ["targetId"])
+    .index("by_target_action", ["targetId", "action"])
+    .index("by_action", ["action"]),
 
   /**
    * Single-row server config. `signupMode` decides the tier new accounts get —

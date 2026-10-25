@@ -10,6 +10,10 @@
 
 import type * as account from "../account.js";
 import type * as admin from "../admin.js";
+import type * as adminAnnouncements from "../adminAnnouncements.js";
+import type * as adminAppeals from "../adminAppeals.js";
+import type * as adminCommunities from "../adminCommunities.js";
+import type * as adminHandles from "../adminHandles.js";
 import type * as auth from "../auth.js";
 import type * as comments from "../comments.js";
 import type * as communities from "../communities.js";
@@ -23,6 +27,8 @@ import type * as lib_access from "../lib/access.js";
 import type * as lib_accounts from "../lib/accounts.js";
 import type * as lib_cascade from "../lib/cascade.js";
 import type * as lib_dto from "../lib/dto.js";
+import type * as lib_handles from "../lib/handles.js";
+import type * as lib_moderation from "../lib/moderation.js";
 import type * as lib_notify from "../lib/notify.js";
 import type * as lib_rateLimit from "../lib/rateLimit.js";
 import type * as lib_reservationStats from "../lib/reservationStats.js";
@@ -44,6 +50,10 @@ import type {
 declare const fullApi: ApiFromModules<{
   account: typeof account;
   admin: typeof admin;
+  adminAnnouncements: typeof adminAnnouncements;
+  adminAppeals: typeof adminAppeals;
+  adminCommunities: typeof adminCommunities;
+  adminHandles: typeof adminHandles;
   auth: typeof auth;
   comments: typeof comments;
   communities: typeof communities;
@@ -57,6 +67,8 @@ declare const fullApi: ApiFromModules<{
   "lib/accounts": typeof lib_accounts;
   "lib/cascade": typeof lib_cascade;
   "lib/dto": typeof lib_dto;
+  "lib/handles": typeof lib_handles;
+  "lib/moderation": typeof lib_moderation;
   "lib/notify": typeof lib_notify;
   "lib/rateLimit": typeof lib_rateLimit;
   "lib/reservationStats": typeof lib_reservationStats;

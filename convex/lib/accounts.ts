@@ -3,6 +3,7 @@ import type { MutationCtx } from "../_generated/server";
 import { bump, deleteCommentCascade, deleteCommunityCascade, deletePostCascade, removeMembership } from "./cascade";
 import { applyReservation, bumpReferralCount, updateStats } from "./reservationStats";
 import { parseSignupMeta, randomToken, usernameFromIdentity } from "./signup";
+import { isHandleBlocked } from "./handles";
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,30}$/;
 
@@ -11,7 +12,7 @@ async function usernameTaken(ctx: MutationCtx, username: string) {
     .query("profiles")
     .withIndex("by_usernameLower", (q) => q.eq("usernameLower", username.toLowerCase()))
     .first();
-  return hit !== null;
+  return hit !== null || (await isHandleBlocked(ctx, username));
 }
 
 async function uniqueReferralCode(ctx: MutationCtx) {
@@ -237,6 +238,24 @@ export async function deleteAllDataForAuthUser(ctx: MutationCtx, authUserId: str
       ...(a.targetId === me ? { targetId: undefined } : {}),
     });
   }
+
+  // Free-text notes about the user and their appeals go with them; notes they
+  // wrote as an admin stay, unattributed.
+  const notesAbout = await ctx.db
+    .query("adminNotes")
+    .withIndex("by_target", (q) => q.eq("targetId", me))
+    .collect();
+  for (const n of notesAbout) await ctx.db.delete(n._id);
+  const notesBy = await ctx.db
+    .query("adminNotes")
+    .withIndex("by_author", (q) => q.eq("authorId", me))
+    .collect();
+  for (const n of notesBy) await ctx.db.patch(n._id, { authorId: undefined });
+  const appeals = await ctx.db
+    .query("appeals")
+    .withIndex("by_profile", (q) => q.eq("profileId", me))
+    .collect();
+  for (const a of appeals) await ctx.db.delete(a._id);
 
   if (profile.avatarId) await ctx.storage.delete(profile.avatarId);
   await ctx.db.delete(me);
