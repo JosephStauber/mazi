@@ -146,7 +146,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
             });
             if (taken) {
               throw new APIError("BAD_REQUEST", {
-                message: "That username is already taken. Try another.",
+                message: "That username isn't available. Try another.",
               });
             }
           }

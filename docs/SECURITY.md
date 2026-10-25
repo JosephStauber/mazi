@@ -32,9 +32,18 @@ The browser talks to Convex directly (WebSocket) with the user's Better Auth–i
 
 ## Suspension
 
-- An admin can suspend an account (`admin:suspendUser`, reason required and shown to the user). `profiles.suspendedAt` set ⇒ `requireViewer` (and so `requireFullAccess`) throws and `getFullAccessViewer` returns null, so **every** app function fails closed without checking suspension itself.
+- An admin can suspend an account (`admin:suspendUser`, reason required and shown to the user; 24h / 7d / 30d or until restored). Suspending also deletes the account's Better Auth sessions (`revokeSessions`) and emails the statement of reasons. Timed suspensions are lifted by the `expire suspensions` cron (`admin:expireSuspensions`, every 10 min), which emails and audits too. `profiles.suspendedAt` set ⇒ `requireViewer` (and so `requireFullAccess`) throws and `getFullAccessViewer` returns null, so **every** app function fails closed without checking suspension itself.
 - A suspended account keeps only its data rights: `account:exportMyData` and `account:mySuspension` use `requireAccountOwner` / `getViewer`. Deleting the account goes through Better Auth (unaffected). Don't use `requireAccountOwner` for anything else.
 - Admins can't be suspended (revoke admin first); suspending yourself is refused. Their existing posts stay visible — removal is a separate (future) action.
+- A suspended user may file **one appeal per suspension** (`account:submitAppeal`, `requireAccountOwner` + must be suspended). Admins resolve it in `adminAppeals:resolve`; accepting lifts the suspension.
+
+## Admin roles
+
+- `adminUsers.role` is `owner` or `moderator` (unset ⇒ `owner`, for rows granted before roles). Set only by the internal `admin:grant { username, role }`.
+- `requireAdmin` admits both; `requireOwner` is for anything touching personal data or the whole platform: `revealEmail`, reservation stats/list, `auditExport`, `adminHandles:block/unblock`, `adminCommunities:takedown/transfer`, `adminAnnouncements:*`, deleting another admin's note. The admin UI hides owner tools from moderators (`OwnerOnly`), but the functions are the enforcement.
+- Emails reach a client only through `reservationList` and `revealEmail` (owner; writes a `reveal_email` audit row on every call). Moderation emails are looked up server-side (`lib/moderation.ts` `emailOf`) and never returned.
+- Community admin tools return metadata only (name, slug, size, owner) — no back door into invite-only posts.
+- Blocked handles (`lib/handles.ts`: built-in list + `blockedHandles` rules, exact or substring) are enforced at signup (auth hook + trigger), `profiles:usernameAvailable` and `profiles:update`. Substring rules' text isn't written to the audit log.
 - Layouts redirect suspended users to `/suspended`; `AppShell` watches `account:mySuspension` live, and `app/(protected)/error.tsx` keeps the shell mounted so that redirect still fires when queries start throwing mid-session.
 
 ## Access rules by area
@@ -50,7 +59,7 @@ The browser talks to Convex directly (WebSocket) with the user's Better Auth–i
 | Invites | `inviteByToken`: pending + unexpired only, public community fields | create (targeted or link): creator/moderator; accept: link = reusable, targeted = invitee only and only from `pending`; decline: targeted invitee, pending only |
 | Notifications | recipient only | **no client writes at all** — created server-side inside the action that caused them (`convex/lib/notify.ts`); mentions only notify users who can see the post. mark read: recipient only |
 | Reservations | `reservations:mine`: owner only (referral count = confirmed signups) | trigger-written only |
-| Admin | every public `admin:*` function starts with `requireAdmin` (allowlist + not suspended, in `access.ts`); `reservationList` is the **only** path that returns emails — the Users page doesn't | `suspendUser` / `unsuspendUser`: admin, written to `adminActions` in the same mutation. `admin:grant` / `admin:setSignupMode` are internal (CLI / dashboard only) and audited with no actor. No function edits or deletes audit rows |
+| Admin | every public function in `admin`, `adminAppeals`, `adminCommunities`, `adminHandles`, `adminAnnouncements` starts with `requireAdmin` or `requireOwner` (see Admin roles); emails only via `reservationList` / `revealEmail` | every privileged write calls `audit` (`lib/moderation.ts`) in the same mutation. `admin:grant` / `admin:setSignupMode` are internal (CLI / dashboard only) and audited with no actor. No function edits or deletes audit rows |
 
 ## Files
 

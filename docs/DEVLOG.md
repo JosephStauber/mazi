@@ -17,6 +17,34 @@ The running memory of the project. **Every meaningful change gets an entry**, ne
 
 ## Entries
 
+## 2026-10-25 — Admin panel batch: user pages, timed suspensions, appeals, roles, communities, handles, launch email
+**By:** Claude (agent)
+**Summary:** Built 13 admin improvements on top of the first slice.
+- **Users:** per-user page `/admin/users/[id]` with history, notes, appeals, created communities, profile reset, and an owner-only, audited email reveal. The list gets an All / New (24h) / Suspended filter and flags very active new accounts.
+- **Suspensions:** 24h / 7d / 30d / until restored, lifted by a cron. Suspending signs the user out everywhere, and suspend / restore / appeal / reset / takedown decisions are emailed (plain text, no tracking).
+- **Appeals:** one per suspension, filed from `/suspended`, resolved in an admin queue.
+- **Admin roles:** `owner` vs `moderator`; owner-only tools are emails, reservations, handles, community removal/transfer, the launch email and CSV export.
+- **Communities tab:** metadata only, plus takedown and ownership transfer.
+- **Blocked handles:** a built-in list plus admin exact/substring rules, enforced at signup, in the availability check and on rename.
+- **Audit log:** action and per-user filters, user links, CSV export.
+- **Launch email:** one-time, to everyone who reserved, with a test send first.
+- **Polish:** the compact filter control replaces the full-width tabs.
+**Backend:** `convex/lib/moderation.ts` (audit, emailOf, revokeSessions, suspendProfile, liftSuspension, notifyByEmail), `convex/lib/handles.ts`, `getAdminRole` / `requireOwner` in `access.ts`, new modules `adminAppeals`, `adminCommunities`, `adminHandles`, `adminAnnouncements`, `crons.ts`. `sendNotice` in `email.ts`. `admin:amIAdmin` → `admin:myRole`; `admin:grant` takes an optional `role`.
+**Schema:** `profiles.suspendedUntil?` + index; `adminUsers.role?`; new tables `adminNotes`, `appeals`, `blockedHandles`, `announcements`; `adminActions` gains actions and `by_action` / `by_target_action`. All additive — **no migration**. Existing admins are treated as `owner`.
+**Not done:** assigning community moderators from the admin panel — it would override the standing "moderator role is dormant" decision (CLAUDE.md), so it's left for a separate call. Step-up re-auth wasn't requested; tracked in TODO.
+**Verify:** `tsc`, `eslint`, `next build` clean. Exercised on a local anonymous Convex backend with owner, moderator, target and reserved test accounts:
+- role limits (moderator denied email reveal / reservations / handles / takedown / announcements; nav hides owner tabs)
+- appeal → accept (restores + email) and the one-appeal guard; the UI appeal on `/suspended` updated live and acceptance redirected to `/home`
+- timed suspension from the UI, plus expiry via the cron function (backdated with a throwaway function, since deleted)
+- session revoke (target's sessions 2 → 0, others intact)
+- profile reset (bio + random handle)
+- blocked handles at signup / availability / rename
+- community transfer (member-only) and takedown
+- launch email (test send, batch to the verified reserved user, second send refused)
+- audit filters + export
+Emails were checked in the logs (no Resend key locally).
+**Follow-ups:** set `RESEND_API_KEY`; legal copy for moderation; step-up auth; see TODO.
+
 ## 2026-10-24 — Admin panel foundation: nav, audit log, Users page with suspend
 **By:** Claude (agent)
 **Summary:** The admin area now has a tab nav (Users · Reservations · Audit log; `/admin` → `/admin/users`), an append-only audit log, and a Users page (live list, All/Suspended filter, handle-prefix search, suspend with a user-facing reason, restore). Suspension is enforced in `requireViewer`, so every app function fails closed for a suspended account; it keeps data export and lands on a new `/suspended` page showing the reason.

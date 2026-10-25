@@ -1,47 +1,47 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import type { Doc, Id } from "./_generated/dataModel";
-import { deny, getViewer, isAdmin, isSuspended, requireAdmin } from "./lib/access";
+import { internalMutation, mutation, query, type QueryCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
+import {
+  deny,
+  getAdminRole,
+  getViewer,
+  isSuspended,
+  requireAdmin,
+  requireOwner,
+} from "./lib/access";
 import { avatarUrl, iso } from "./lib/dto";
+import { audit, liftSuspension, notifyByEmail, suspendProfile } from "./lib/moderation";
 import { nullable, paginated } from "./lib/returns";
+import { randomToken } from "./lib/signup";
 import { parseOrDeny } from "./lib/validate";
-import { adminAction, signupMode } from "./schema";
+import { adminAction, adminRole, appealStatus, signupMode } from "./schema";
 import { authComponent } from "./auth";
-import { suspendReasonSchema } from "../lib/validators/admin";
+import {
+  adminNoteSchema,
+  SUSPEND_DURATIONS,
+  suspendReasonSchema,
+} from "../lib/validators/admin";
 
 /** Rows the reservation list returns (mirrors RESERVATION_LIST_LIMIT). */
 const LIST_LIMIT = 2000;
 
-export const amIAdmin = query({
+/** The caller's admin role, or null. Drives the admin layout gate + nav. */
+export const myRole = query({
   args: {},
-  returns: v.boolean(),
+  returns: v.union(adminRole, v.null()),
   handler: async (ctx) => {
     const viewer = await getViewer(ctx);
-    return !!viewer && !isSuspended(viewer) && (await isAdmin(ctx, viewer._id));
+    if (!viewer || isSuspended(viewer)) return null;
+    return await getAdminRole(ctx, viewer._id);
   },
 });
 
-/** Write one audit row. Call it inside the mutation that performs the action. */
-async function audit(
-  ctx: MutationCtx,
-  row: {
-    actorId?: Id<"profiles">;
-    action: Doc<"adminActions">["action"];
-    target?: Doc<"profiles">;
-    reason?: string;
-    details?: string;
-  }
-) {
-  await ctx.db.insert("adminActions", {
-    actorId: row.actorId,
-    action: row.action,
-    targetId: row.target?._id,
-    targetUsername: row.target?.username,
-    reason: row.reason,
-    details: row.details,
-  });
-}
+const DAY = 24 * 60 * 60 * 1000;
+
+/** New accounts this active within a day get flagged for a look (counters only). */
+const NEW_ACCOUNT_POSTS = 20;
+const NEW_ACCOUNT_FOLLOWING = 100;
 
 const adminUserV = v.object({
   id: v.string(),
@@ -51,12 +51,17 @@ const adminUserV = v.object({
   created_at: v.string(),
   post_count: v.number(),
   follower_count: v.number(),
-  is_admin: v.boolean(),
+  following_count: v.number(),
+  admin_role: nullable(adminRole),
   suspended_at: nullable(v.string()),
+  suspended_until: nullable(v.string()),
   suspended_reason: nullable(v.string()),
+  /** New (<24h) and unusually active — worth a look, not proof of anything. */
+  flagged: v.boolean(),
 });
 
 async function toAdminUser(ctx: QueryCtx, p: Doc<"profiles">) {
+  const isNew = Date.now() - p._creationTime < DAY;
   return {
     id: p._id,
     username: p.username,
@@ -65,16 +70,21 @@ async function toAdminUser(ctx: QueryCtx, p: Doc<"profiles">) {
     created_at: iso(p._creationTime),
     post_count: p.postCount,
     follower_count: p.followerCount,
-    is_admin: await isAdmin(ctx, p._id),
+    following_count: p.followingCount,
+    admin_role: await getAdminRole(ctx, p._id),
     suspended_at: p.suspendedAt !== undefined ? iso(p.suspendedAt) : null,
+    suspended_until: p.suspendedUntil !== undefined ? iso(p.suspendedUntil) : null,
     suspended_reason: p.suspendedReason ?? null,
+    flagged:
+      isNew &&
+      (p.postCount >= NEW_ACCOUNT_POSTS || p.followingCount >= NEW_ACCOUNT_FOLLOWING),
   };
 }
 
-/** Every account, newest first, or only suspended ones. Admin-only; no emails. */
+/** Every account newest first, only suspended ones, or only last-24h signups. No emails. */
 export const users = query({
   args: {
-    filter: v.union(v.literal("all"), v.literal("suspended")),
+    filter: v.union(v.literal("all"), v.literal("new"), v.literal("suspended")),
     paginationOpts: paginationOptsValidator,
   },
   returns: paginated(adminUserV),
@@ -87,14 +97,20 @@ export const users = query({
             .withIndex("by_suspendedAt", (q) => q.gt("suspendedAt", 0))
             .order("desc")
             .paginate(paginationOpts)
-        : await ctx.db.query("profiles").order("desc").paginate(paginationOpts);
+        : filter === "new"
+          ? await ctx.db
+              .query("profiles")
+              .withIndex("by_creation_time", (q) => q.gt("_creationTime", Date.now() - DAY))
+              .order("desc")
+              .paginate(paginationOpts)
+          : await ctx.db.query("profiles").order("desc").paginate(paginationOpts);
     const page = [];
     for (const p of result.page) page.push(await toAdminUser(ctx, p));
     return { ...result, page };
   },
 });
 
-/** Case-insensitive handle-prefix lookup. Admin-only. */
+/** Case-insensitive handle-prefix lookup. */
 export const searchUsers = query({
   args: { query: v.string() },
   returns: v.array(adminUserV),
@@ -114,24 +130,198 @@ export const searchUsers = query({
   },
 });
 
+const auditEntryV = v.object({
+  id: v.string(),
+  action: adminAction,
+  /** null = CLI/dashboard run, the system (expiry), or an admin who has since erased their account. */
+  actor_username: nullable(v.string()),
+  actor_id: nullable(v.string()),
+  target_username: nullable(v.string()),
+  /** null once the target erased their account. */
+  target_id: nullable(v.string()),
+  reason: nullable(v.string()),
+  details: nullable(v.string()),
+  created_at: v.string(),
+});
+
+async function toAuditEntry(ctx: QueryCtx, a: Doc<"adminActions">) {
+  const actor = a.actorId ? await ctx.db.get(a.actorId) : null;
+  return {
+    id: a._id,
+    action: a.action,
+    actor_username: actor?.username ?? null,
+    actor_id: actor?._id ?? null,
+    target_username: a.targetUsername ?? null,
+    target_id: a.targetId ?? null,
+    reason: a.reason ?? null,
+    details: a.details ?? null,
+    created_at: iso(a._creationTime),
+  };
+}
+
+/** Everything the user page shows. Email is not included — see `revealEmail`. */
+export const user = query({
+  args: { profileId: v.id("profiles") },
+  returns: v.union(
+    v.null(),
+    v.object({
+      user: adminUserV,
+      bio: nullable(v.string()),
+      communities: v.array(
+        v.object({ id: v.string(), name: v.string(), slug: v.string(), member_count: v.number() })
+      ),
+      history: v.array(auditEntryV),
+      notes: v.array(
+        v.object({
+          id: v.string(),
+          author_username: nullable(v.string()),
+          is_mine: v.boolean(),
+          body: v.string(),
+          created_at: v.string(),
+        })
+      ),
+      appeals: v.array(
+        v.object({
+          id: v.string(),
+          status: appealStatus,
+          body: v.string(),
+          response: nullable(v.string()),
+          created_at: v.string(),
+        })
+      ),
+    })
+  ),
+  handler: async (ctx, { profileId }) => {
+    const admin = await requireAdmin(ctx);
+    const p = await ctx.db.get(profileId);
+    if (!p) return null;
+
+    const [communities, history, notes, appeals] = await Promise.all([
+      ctx.db.query("communities").withIndex("by_creator", (q) => q.eq("creatorId", p._id)).take(50),
+      ctx.db
+        .query("adminActions")
+        .withIndex("by_target", (q) => q.eq("targetId", p._id))
+        .order("desc")
+        .take(50),
+      ctx.db
+        .query("adminNotes")
+        .withIndex("by_target", (q) => q.eq("targetId", p._id))
+        .order("desc")
+        .take(100),
+      ctx.db
+        .query("appeals")
+        .withIndex("by_profile", (q) => q.eq("profileId", p._id))
+        .order("desc")
+        .take(20),
+    ]);
+
+    const noteOut = [];
+    for (const n of notes) {
+      const author = n.authorId ? await ctx.db.get(n.authorId) : null;
+      noteOut.push({
+        id: n._id,
+        author_username: author?.username ?? null,
+        is_mine: n.authorId === admin._id,
+        body: n.body,
+        created_at: iso(n._creationTime),
+      });
+    }
+    const historyOut = [];
+    for (const a of history) historyOut.push(await toAuditEntry(ctx, a));
+
+    return {
+      user: await toAdminUser(ctx, p),
+      bio: p.bio ?? null,
+      communities: communities.map((c) => ({
+        id: c._id,
+        name: c.name,
+        slug: c.slug,
+        member_count: c.memberCount,
+      })),
+      history: historyOut,
+      notes: noteOut,
+      appeals: appeals.map((a) => ({
+        id: a._id,
+        status: a.status,
+        body: a.body,
+        response: a.response ?? null,
+        created_at: iso(a._creationTime),
+      })),
+    };
+  },
+});
+
 /**
- * Lock an account out of the app (`requireViewer` enforces it everywhere).
- * The reason is shown to the user. Admins can't be suspended.
+ * Show one account's email to an owner. A mutation (not a query) so every
+ * look writes an audit row.
+ */
+export const revealEmail = mutation({
+  args: { profileId: v.id("profiles") },
+  returns: v.union(v.string(), v.null()),
+  handler: async (ctx, { profileId }) => {
+    const admin = await requireOwner(ctx);
+    const target = await ctx.db.get(profileId);
+    if (!target) deny("User not found");
+    const user = await authComponent.getAnyUserById(ctx, target.authUserId);
+    await audit(ctx, { actorId: admin._id, action: "reveal_email", target });
+    return user?.email ?? null;
+  },
+});
+
+export const addNote = mutation({
+  args: { profileId: v.id("profiles"), body: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { profileId, body }) => {
+    const admin = await requireAdmin(ctx);
+    if (!(await ctx.db.get(profileId))) deny("User not found");
+    const text = parseOrDeny(adminNoteSchema, body);
+    await ctx.db.insert("adminNotes", { targetId: profileId, authorId: admin._id, body: text });
+    return null;
+  },
+});
+
+/** Delete a note: its author, or any owner. */
+export const deleteNote = mutation({
+  args: { noteId: v.id("adminNotes") },
+  returns: v.null(),
+  handler: async (ctx, { noteId }) => {
+    const admin = await requireAdmin(ctx);
+    const note = await ctx.db.get(noteId);
+    if (!note) return null;
+    if (note.authorId !== admin._id && (await getAdminRole(ctx, admin._id)) !== "owner") {
+      deny("Only the author or an owner can delete this note");
+    }
+    await ctx.db.delete(noteId);
+    return null;
+  },
+});
+
+const durationV = v.union(v.literal("1d"), v.literal("7d"), v.literal("30d"), v.literal("permanent"));
+
+/**
+ * Lock an account out (`requireViewer` enforces it everywhere), sign it out,
+ * and email the reason. Admins can't be suspended.
  */
 export const suspendUser = mutation({
-  args: { profileId: v.id("profiles"), reason: v.string() },
+  args: { profileId: v.id("profiles"), reason: v.string(), duration: durationV },
   returns: v.null(),
-  handler: async (ctx, { profileId, reason }) => {
+  handler: async (ctx, { profileId, reason, duration }) => {
     const admin = await requireAdmin(ctx);
     const target = await ctx.db.get(profileId);
     if (!target) deny("User not found");
     if (target._id === admin._id) deny("You can't suspend yourself");
-    if (await isAdmin(ctx, target._id)) deny("Admins can't be suspended");
+    if (await getAdminRole(ctx, target._id)) deny("Admins can't be suspended");
     if (isSuspended(target)) deny("Already suspended");
     const why = parseOrDeny(suspendReasonSchema, reason);
+    const { ms, label } = SUSPEND_DURATIONS[duration];
 
-    await ctx.db.patch(target._id, { suspendedAt: Date.now(), suspendedReason: why });
-    await audit(ctx, { actorId: admin._id, action: "suspend", target, reason: why });
+    await suspendProfile(ctx, {
+      target,
+      actorId: admin._id,
+      reason: why,
+      until: ms === null ? null : Date.now() + ms,
+      durationLabel: label,
+    });
     return null;
   },
 });
@@ -144,51 +334,135 @@ export const unsuspendUser = mutation({
     const target = await ctx.db.get(profileId);
     if (!target) deny("User not found");
     if (!isSuspended(target)) deny("Not suspended");
-
-    await ctx.db.patch(target._id, { suspendedAt: undefined, suspendedReason: undefined });
-    await audit(ctx, { actorId: admin._id, action: "unsuspend", target });
+    await liftSuspension(ctx, { target, actorId: admin._id, via: "admin" });
     return null;
   },
 });
 
-/** The audit log, newest first. Admin-only. */
-export const auditLog = query({
-  args: { paginationOpts: paginationOptsValidator },
-  returns: paginated(
-    v.object({
-      id: v.string(),
-      action: adminAction,
-      /** null = CLI/dashboard run, or an admin who has since erased their account. */
-      actor_username: nullable(v.string()),
-      target_username: nullable(v.string()),
-      reason: nullable(v.string()),
-      details: nullable(v.string()),
-      created_at: v.string(),
-    })
-  ),
-  handler: async (ctx, { paginationOpts }) => {
-    await requireAdmin(ctx);
-    const result = await ctx.db.query("adminActions").order("desc").paginate(paginationOpts);
-    const page = [];
-    for (const a of result.page) {
-      const actor = a.actorId ? await ctx.db.get(a.actorId) : null;
-      page.push({
-        id: a._id,
-        action: a.action,
-        actor_username: actor?.username ?? null,
-        target_username: a.targetUsername ?? null,
-        reason: a.reason ?? null,
-        details: a.details ?? null,
-        created_at: iso(a._creationTime),
-      });
+/** Cron: lift timed suspensions whose end has passed. */
+export const expireSuspensions = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const due = await ctx.db
+      .query("profiles")
+      .withIndex("by_suspendedUntil", (q) => q.gt("suspendedUntil", 0).lte("suspendedUntil", Date.now()))
+      .take(100);
+    for (const target of due) await liftSuspension(ctx, { target, via: "expired" });
+    return null;
+  },
+});
+
+/**
+ * Clear an offensive bio/avatar or force a new handle without suspending.
+ * The user is emailed the reason.
+ */
+export const resetProfile = mutation({
+  args: {
+    profileId: v.id("profiles"),
+    bio: v.boolean(),
+    avatar: v.boolean(),
+    username: v.boolean(),
+    reason: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, { profileId, bio, avatar, username, reason }) => {
+    const admin = await requireAdmin(ctx);
+    const target = await ctx.db.get(profileId);
+    if (!target) deny("User not found");
+    if (!bio && !avatar && !username) deny("Pick something to reset");
+    const why = parseOrDeny(suspendReasonSchema, reason);
+
+    const patch: Partial<Doc<"profiles">> = {};
+    const done: string[] = [];
+    if (bio && target.bio) {
+      patch.bio = undefined;
+      done.push("bio");
     }
+    if (avatar && target.avatarId) {
+      await ctx.storage.delete(target.avatarId);
+      patch.avatarId = undefined;
+      done.push("avatar");
+    }
+    if (username) {
+      let handle = `user_${randomToken(8)}`;
+      while (
+        await ctx.db
+          .query("profiles")
+          .withIndex("by_usernameLower", (q) => q.eq("usernameLower", handle.toLowerCase()))
+          .first()
+      ) {
+        handle = `user_${randomToken(10)}`;
+      }
+      patch.username = handle;
+      patch.usernameLower = handle.toLowerCase();
+      done.push(`username (@${target.username} → @${handle})`);
+    }
+    if (done.length === 0) deny("Nothing to reset — those fields are already empty");
+
+    await ctx.db.patch(target._id, patch);
+    await notifyByEmail(ctx, target, "We changed part of your Mazi profile", [
+      `Hi @${target.username},`,
+      `Our team reset your profile ${done.map((d) => d.split(" ")[0]).join(", ")} because it broke the community guidelines.`,
+      `Reason: ${why}`,
+      ...(patch.username ? [`Your handle is now @${patch.username}. You can choose a new one in Settings.`] : []),
+    ]);
+    await audit(ctx, {
+      actorId: admin._id,
+      action: "reset_profile",
+      target,
+      reason: why,
+      details: done.join(", "),
+    });
+    return null;
+  },
+});
+
+/** The audit log, newest first, optionally narrowed to one action or one target. */
+export const auditLog = query({
+  args: {
+    action: v.optional(adminAction),
+    targetId: v.optional(v.id("profiles")),
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: paginated(auditEntryV),
+  handler: async (ctx, { action, targetId, paginationOpts }) => {
+    await requireAdmin(ctx);
+    const query = targetId
+      ? ctx.db
+          .query("adminActions")
+          .withIndex("by_target_action", (q) =>
+            action ? q.eq("targetId", targetId).eq("action", action) : q.eq("targetId", targetId)
+          )
+      : action
+        ? ctx.db.query("adminActions").withIndex("by_action", (q) => q.eq("action", action))
+        : ctx.db.query("adminActions");
+    const result = await query.order("desc").paginate(paginationOpts);
+    const page = [];
+    for (const a of result.page) page.push(await toAuditEntry(ctx, a));
     return { ...result, page };
   },
 });
 
-const DAY = 24 * 60 * 60 * 1000;
+/** Up to 5000 entries for a CSV export (e.g. a DSA transparency report). Owners only. */
+export const auditExport = query({
+  args: { action: v.optional(adminAction) },
+  returns: v.array(auditEntryV),
+  handler: async (ctx, { action }) => {
+    await requireOwner(ctx);
+    const rows = await (action
+      ? ctx.db.query("adminActions").withIndex("by_action", (q) => q.eq("action", action))
+      : ctx.db.query("adminActions")
+    )
+      .order("desc")
+      .take(5000);
+    const out = [];
+    for (const a of rows) out.push(await toAuditEntry(ctx, a));
+    return out;
+  },
+});
 
-/** Aggregate dashboard metrics. Admin-only. */
+/** Aggregate dashboard metrics. Owners only. */
 export const reservationStats = query({
   args: {},
   returns: v.object({
@@ -208,7 +482,7 @@ export const reservationStats = query({
     top_referrers: v.array(v.object({ username: v.string(), count: v.number() })),
   }),
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireOwner(ctx);
     const rows = await ctx.db.query("reservations").order("desc").take(LIST_LIMIT * 5);
     const now = Date.now();
     const startOfToday = new Date(new Date(now).toISOString().slice(0, 10)).getTime();
@@ -291,8 +565,8 @@ export const reservationStats = query({
 });
 
 /**
- * Per-signup rows **including email** — the only path that exposes reservation
- * emails to a client, and only to allowlisted admins.
+ * Per-signup rows **including email** — with `revealEmail`, the only paths
+ * that expose emails to a client, and only to owners.
  */
 export const reservationList = query({
   args: {},
@@ -312,7 +586,7 @@ export const reservationList = query({
     })
   ),
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireOwner(ctx);
     const rows = await ctx.db.query("reservations").order("desc").take(LIST_LIMIT);
     const counts = new Map<string, number>();
     for (const r of rows) {
@@ -342,13 +616,15 @@ export const reservationList = query({
 });
 
 /**
- * Add an admin (privilege grant — run deliberately from the CLI/dashboard):
+ * Add an admin or change their role (privilege grant — run deliberately from
+ * the CLI/dashboard). Role defaults to `owner`:
  *   npx convex run admin:grant '{"username": "you"}'
+ *   npx convex run admin:grant '{"username": "helper", "role": "moderator"}'
  */
 export const grant = internalMutation({
-  args: { username: v.string() },
+  args: { username: v.string(), role: v.optional(adminRole) },
   returns: v.null(),
-  handler: async (ctx, { username }) => {
+  handler: async (ctx, { username, role = "owner" }) => {
     const p = await ctx.db
       .query("profiles")
       .withIndex("by_usernameLower", (q) => q.eq("usernameLower", username.toLowerCase()))
@@ -359,9 +635,13 @@ export const grant = internalMutation({
       .withIndex("by_profile", (q) => q.eq("profileId", p._id))
       .unique();
     if (!existing) {
-      await ctx.db.insert("adminUsers", { profileId: p._id });
-      await audit(ctx, { action: "grant_admin", target: p });
+      await ctx.db.insert("adminUsers", { profileId: p._id, role });
+    } else if ((existing.role ?? "owner") !== role) {
+      await ctx.db.patch(existing._id, { role });
+    } else {
+      return null;
     }
+    await audit(ctx, { action: "grant_admin", target: p, details: role });
     return null;
   },
 });

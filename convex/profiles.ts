@@ -13,6 +13,7 @@ import { toProfile, toProfileListItem, toProfileRef } from "./lib/dto";
 import { communityRefV, paginated, profileListItemV, profileRefV, profileV } from "./lib/returns";
 import { parseOrDeny } from "./lib/validate";
 import { claimImage } from "./files";
+import { isHandleBlocked } from "./lib/handles";
 import { updateProfileSchema } from "../lib/validators/profile";
 import { AVATAR_MAX_BYTES } from "../lib/validators/post";
 
@@ -35,11 +36,12 @@ export const me = query({
   },
 });
 
-/** Used by the signup auth hook for a friendly "taken" error. */
+/** Used by the signup auth hook for a friendly error: taken or reserved. */
 export const isUsernameTaken = internalQuery({
   args: { username: v.string() },
   returns: v.boolean(),
-  handler: async (ctx, { username }) => (await byUsernameLower(ctx, username)) !== null,
+  handler: async (ctx, { username }) =>
+    (await byUsernameLower(ctx, username)) !== null || (await isHandleBlocked(ctx, username)),
 });
 
 /**
@@ -52,6 +54,7 @@ export const usernameAvailable = query({
   handler: async (ctx, { username }) => {
     const trimmed = username.trim();
     if (!USERNAME_RE.test(trimmed)) return false;
+    if (await isHandleBlocked(ctx, trimmed)) return false;
     return (await byUsernameLower(ctx, trimmed)) === null;
   },
 });
@@ -129,6 +132,7 @@ export const update = mutation({
     if (data.username && data.username !== viewer.username) {
       const clash = await byUsernameLower(ctx, data.username);
       if (clash && clash._id !== viewer._id) deny("Username is already taken");
+      if (await isHandleBlocked(ctx, data.username)) deny("That username isn't available");
       patch.username = data.username;
       patch.usernameLower = data.username.toLowerCase();
     }
