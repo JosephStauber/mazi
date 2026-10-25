@@ -27,6 +27,13 @@ The running memory of the project. **Every meaningful change gets an entry**, ne
 **Verify:** `tsc`, `eslint`, `next build` clean. Exercised on a local anonymous Convex backend: CLI `setSignupMode`/`grant` audited; admin suspends via the UI (live list update, Suspended filter, `@ADM` search, audit entry with reason); suspended user signs in → `/suspended` with reason, `/settings` redirects, data export works in the browser; `posts:create` / `feed:following` / `admin:users` denied for them; self-suspend refused; restore → back to `/home`; suspension while on `/home` redirects live.
 **Follow-ups:** set `legal.contactEmail` (the suspension page shows it for appeals); mention suspension + audit-record retention in the privacy policy / terms; reports queue, content takedown, launch-control page (TODO).
 
+## 2026-10-24 — Vercel Web Analytics (cookieless, redacted)
+**By:** Claude (agent)
+**Summary:** The Vercel dashboard showed no traffic because `@vercel/analytics` was never installed. Added it, wrapped in `PrivateAnalytics`, whose `beforeSend` drops query strings/hashes (reset/invite tokens, search terms, referral codes) and collapses `/profile/*`, `/communities/*` (except `join`) and `/post/*` to route placeholders. Recorded as D15 (amends D4's analytics clause); disclosed in the privacy policy, cookie notice, and subprocessor list.
+**Changed:** `package.json`, `components/providers/analytics.tsx` (new), `app/layout.tsx`, `lib/legal/config.ts`, `app/legal/privacy/page.tsx`, `app/legal/cookies/page.tsx`, `docs/DECISIONS.md`.
+**Why:** User request; needed traffic numbers for the deployed site.
+**Follow-ups:** after deploy, confirm Web Analytics is enabled for the Vercel project and pageviews appear. Add any new id-bearing route to the redaction list.
+
 ## 2026-10-24 — Supabase → Convex + Better Auth + Resend (fresh start)
 **By:** Claude (agent)
 **Summary:** Replaced Supabase (Postgres + Auth + Storage + RLS) with Convex (data, functions, storage, live queries), Better Auth (email + password with required verification, passkeys, Google/Apple scaffolded), and Resend (auth email). The UI is now reactive. The new backend started empty — no data migrated (the Supabase project was paused; user chose a fresh start).

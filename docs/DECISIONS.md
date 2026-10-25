@@ -25,7 +25,7 @@ Format: `### D<n> — Title` · **Date** · **Status** (Active / Superseded by D
 **Implications:** Style via tokens, never hard-coded hex. `README.md` / `PROJECT_OUTLINE.txt` still describe B&W/Geist — stale, pending reconciliation.
 
 ### D4 — Chronological only; no algorithm, ads, or tracking
-**Date:** 2026-03-24 · **Status:** Active
+**Date:** 2026-03-24 · **Status:** Active — analytics clause amended by D15
 **Decision:** Feeds are strict reverse-chronological. No ranking, suggested content, ads, or third-party analytics/trackers.
 **Why:** Core product ethos — privacy-first, non-manipulative.
 **Implications:** Don't introduce ranking or trackers without an explicit reversing decision here. Any analytics must be privacy-respecting and deliberate.
@@ -89,4 +89,10 @@ Format: `### D<n> — Title` · **Date** · **Status** (Active / Superseded by D
 **Decision:** `likeCount`, `commentCount` (posts), `memberCount` (communities), `postCount`, `followerCount`, `followingCount` (profiles) are stored on the documents and updated by the mutations and cascade helpers.
 **Why:** Convex has no aggregate `count(*)`; counting rows per render would be unbounded.
 **Implications:** Any new write path that adds/removes a like, comment, member, post, or follow must call `bump` (`convex/lib/cascade.ts`). If counts ever drift, recompute with a one-off internal mutation. (A sharded-counter component is the upgrade path if hot posts cause write contention.)
+
+### D15 — Cookieless, aggregate Vercel Web Analytics allowed
+**Date:** 2026-10-24 · **Status:** Active · **Amends:** D4 (analytics clause only)
+**Decision:** Vercel Web Analytics runs on every page via `components/providers/analytics.tsx`. It sets no cookies and uses no browser storage; Vercel identifies visits by a request hash that is discarded after 24 hours. A `beforeSend` hook strips query strings/hashes and replaces usernames, community slugs, and post ids with route placeholders, so only page *types* are counted. No custom events, no per-user identifiers.
+**Why:** The user wanted basic traffic numbers for the deployed site; this is the most privacy-respecting option on the existing host and needs no consent banner.
+**Implications:** D4 still bans ads, ranking, and trackers. Don't add custom events, user ids, or other analytics/session-replay tools without a new decision. New dynamic routes that put a person or content id in the path must be added to the redaction list. Vercel is disclosed as a subprocessor in `lib/legal/config.ts`.
 

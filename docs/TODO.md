@@ -44,7 +44,7 @@ Priority buckets: **Now** (do next) · **Next** (soon) · **Later** (someday) ·
 ## Housekeeping
 
 - [ ] **Reconcile stale docs.** `README.md` and `PROJECT_OUTLINE.txt` predate the redesign and the Convex move. Update or fold into `ARCHITECTURE.md`.
-- [ ] **Fill legal placeholders** in `lib/legal/config.ts` (entity, contact, jurisdiction) and get `/legal/*` reviewed by counsel. The subprocessor list now names Convex and Resend — add your host (e.g. Vercel) and any OAuth providers when enabled.
+- [ ] **Fill legal placeholders** in `lib/legal/config.ts` (entity, contact, jurisdiction) and get `/legal/*` reviewed by counsel. The subprocessor list now names Convex, Resend, and Vercel (hosting + Web Analytics) — add any OAuth providers when enabled.
 - [ ] **Image compression before upload** (avatars + post images).
 - [ ] **Upgrade path for Better Auth.** `@convex-dev/better-auth@0.12.x` pins `better-auth@1.6.x`; `@better-auth/core`, `@better-auth/utils`, `better-call`, and `@better-fetch/fetch` are pinned to match in `package.json`. Bump them together when the adapter supports 1.7.
 

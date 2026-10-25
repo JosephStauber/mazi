@@ -5,6 +5,7 @@ import { ThemeProvider, themeScript } from "@/components/ui/theme";
 import { ToastProvider } from "@/components/ui/toast";
 import { CookieNotice } from "@/components/legal/cookie-notice";
 import { ConvexClientProvider } from "@/components/providers/convex-client-provider";
+import { PrivateAnalytics } from "@/components/providers/analytics";
 import { getToken } from "@/lib/auth-server";
 
 const displaySerif = Fraunces({
@@ -49,6 +50,7 @@ export default async function RootLayout({
             </ToastProvider>
           </ThemeProvider>
         </ConvexClientProvider>
+        <PrivateAnalytics />
       </body>
     </html>
   );
