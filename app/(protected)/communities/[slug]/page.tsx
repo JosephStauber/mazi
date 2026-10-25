@@ -1,38 +1,44 @@
-import { redirect, notFound } from "next/navigation";
-import { getCurrentUser } from "@/lib/queries/profiles";
-import {
-  getCommunityBySlug,
-  getCommunityMembers,
-  getCommunityPosts,
-} from "@/lib/queries/communities";
-import {
-  loadMoreCommunityPosts,
-  loadMoreCommunityMembers,
-} from "@/lib/actions/pagination";
+"use client";
+
+import { useParams } from "next/navigation";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { useViewer } from "@/components/providers/viewer";
 import { PostComposer } from "@/components/post/post-composer";
 import { JoinLeaveButton } from "@/components/community/join-leave-button";
 import { InvitePanel } from "@/components/community/invite-panel";
 import { CommunityCreatorSettings } from "@/components/community/community-creator-settings";
 import { CommunityTabs } from "@/components/community/community-tabs";
 import { PageHeader } from "@/components/nav/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FeedSkeleton } from "@/components/ui/skeleton";
 import { CommunitiesIcon, LockIcon } from "@/components/ui/icon";
 
-export default async function CommunityPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
-  const currentUser = await getCurrentUser();
-  if (!currentUser) redirect("/login");
+export default function CommunityPage() {
+  const { slug } = useParams<{ slug: string }>();
+  const currentUser = useViewer();
+  const community = useQuery(api.communities.bySlug, { slug });
 
-  const community = await getCommunityBySlug(slug, currentUser.id);
-  if (!community) notFound();
-
-  const [membersPage, postsPage] = await Promise.all([
-    getCommunityMembers(community.id),
-    getCommunityPosts(community.id, currentUser.id),
-  ]);
+  if (community === undefined) {
+    return (
+      <div>
+        <PageHeader title="Community" back />
+        <FeedSkeleton count={3} />
+      </div>
+    );
+  }
+  if (community === null) {
+    return (
+      <div>
+        <PageHeader title="Community" back />
+        <EmptyState
+          icon={<CommunitiesIcon size={24} />}
+          title="Community not found"
+          description="It may have been deleted, or the link is wrong."
+        />
+      </div>
+    );
+  }
 
   const canModerate =
     community.role === "creator" || community.role === "moderator";
@@ -114,13 +120,8 @@ export default async function CommunityPage({
 
       <div className="mt-6">
         <CommunityTabs
-          initialPosts={postsPage.items}
-          postsCursor={postsPage.nextCursor}
-          loadMorePosts={loadMoreCommunityPosts.bind(null, community.id)}
-          initialMembers={membersPage.items}
-          membersCursor={membersPage.nextCursor}
+          communityId={community.id}
           membersCount={community.members_count}
-          loadMoreMembers={loadMoreCommunityMembers.bind(null, community.id)}
           currentUserId={currentUser.id}
           canModerate={canModerate}
         />

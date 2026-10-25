@@ -1,6 +1,6 @@
 # CLAUDE.md — Agent instructions for Mazi
 
-Mazi is a minimalist, **privacy-first** social platform (Next.js 16 App Router · TypeScript · Tailwind v4 · Supabase w/ RLS · Zod). Chronological feeds only — no algorithm, no ads, no tracking, small communities.
+Mazi is a minimalist, **privacy-first** social platform (Next.js 16 App Router · TypeScript · Tailwind v4 · Convex · Better Auth · Resend · Zod). Chronological feeds only — no algorithm, no ads, no tracking, small communities.
 
 You (a coding agent) are working in this repo. Read this file first, then follow it.
 
@@ -15,20 +15,20 @@ Read the doc that matches your task; skim the rest. They live in [`docs/`](docs/
 | [`docs/DEVLOG.md`](docs/DEVLOG.md) | **Always, first** | Reverse-chronological log of every change made to the project. Tells you what recently happened and why. |
 | [`docs/TODO.md`](docs/TODO.md) | Planning / picking work | The backlog. Check before proposing new work — it may already be tracked or deliberately deferred. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Non-trivial code changes | How the app is wired: layers, data flow, routing, design system. |
-| [`docs/SECURITY.md`](docs/SECURITY.md) | Anything touching data access, auth, storage, RLS, or migrations | Trust model, per-table RLS map, storage/upload rules, secrets handling. |
-| [`docs/DATABASE.md`](docs/DATABASE.md) | Schema / migration work | Tables, columns, relationships, RPCs, triggers, indexes, migration order. |
+| [`docs/SECURITY.md`](docs/SECURITY.md) | Anything touching data access, auth, storage, or Convex functions | Trust model, per-area access rules, upload rules, secrets handling. |
+| [`docs/DATABASE.md`](docs/DATABASE.md) | Schema work | Convex tables, indexes, counters, auth triggers, cascades, feed pagination. |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Before reversing an approach | Why we work this way (ADR-style log). |
-| [`docs/SETUP.md`](docs/SETUP.md) | First-time setup / env / migrations | Install, env config (placeholders), applying migrations, verify commands. |
+| [`docs/SETUP.md`](docs/SETUP.md) | First-time setup / env | Install, Convex + Better Auth + Resend env (placeholders), verify commands. |
 | [`docs/ONBOARDING.md`](docs/ONBOARDING.md) | Pre-launch funnel / reservations / access tiers | The public `/reserve` funnel, `reserved` vs `full` access tiers, referral loop, the `NEXT_PUBLIC_LAUNCH_MODE` flag, and the flip-to-open-at-launch checklist. |
-| [`README.md`](README.md) · [`PROJECT_OUTLINE.txt`](PROJECT_OUTLINE.txt) | Onboarding context only | **Partially stale** (predate the redesign + migrations 00002–00005). Trust the `docs/` set + the code over these until they're reconciled. |
+| [`README.md`](README.md) · [`PROJECT_OUTLINE.txt`](PROJECT_OUTLINE.txt) | Onboarding context only | **Stale** (predate the redesign and the move to Convex). Trust the `docs/` set + the code over these until they're reconciled. |
 
 ---
 
 ## Non-negotiables
 
-1. **RLS is the real security boundary, not the server actions.** The browser holds only the Supabase **anon key** + a user JWT and can call the DB directly. Never assume a server action gates access — every table's protection must hold at the Postgres RLS layer. There is **no `service_role` key** anywhere client-reachable; do not introduce one into app code.
-2. **Migrations are applied by the user by hand** in the Supabase SQL editor — there is no Supabase CLI / local stack here. Write migrations as **new, numbered, idempotent** files in `supabase/migrations/` (`0000N_short_name.sql`). Never edit an already-applied migration to change behavior; add a new one. Say explicitly in your summary that a migration needs to be run.
-3. **Don't commit secrets.** `.env.local` is gitignored and holds only public (`NEXT_PUBLIC_*`) keys. Keep it that way.
+1. **Every public Convex function is a security boundary.** There is no RLS: the browser can call any public query/mutation with any arguments. Each one must start with the right check from `convex/lib/access.ts` (`requireViewer`, `requireFullAccess`, `requireVisiblePost`, `getMembership`, `canModeratePost`, …). Identity comes **only** from `ctx.auth` — never take "who am I" as an argument. Privileged operations go in `internalQuery`/`internalMutation` (CLI/dashboard only). Put new rules in `access.ts`, not inline.
+2. **Secrets live on the Convex deployment** (`npx convex env set NAME=value`), never in the repo or `.env.local` (which holds only public `NEXT_PUBLIC_*` URLs + `CONVEX_DEPLOYMENT` and is gitignored). Don't commit secrets.
+3. **Schema is code** (`convex/schema.ts`); `npx convex dev` pushes it. A change that needs existing data rewritten on a live deployment needs a migration — say so explicitly in your summary. Don't hand-edit `convex/betterAuth/generatedSchema.ts`; regenerate it (see `docs/DATABASE.md`).
 4. **Log what you did** in `docs/DEVLOG.md` and reconcile `docs/TODO.md` (see below) as part of finishing — not as an afterthought.
 5. **Privacy-first is a product rule, not just a slogan.** No algorithmic ranking, no engagement manipulation, no third-party trackers/analytics without an explicit decision. Feeds stay strictly reverse-chronological.
 
@@ -36,23 +36,21 @@ Read the doc that matches your task; skim the rest. They live in [`docs/`](docs/
 
 ## Project shape
 
-Business logic lives in [`lib/`](lib/) and is deliberately decoupled from page components (so a future Expo app can reuse it):
+- `convex/` — the backend. One module per area (`posts`, `comments`, `feed`, `profiles`, `follows`, `communities`, `notifications`, `search`, `reservations`, `admin`, `account`, `files`); `auth.ts` (Better Auth config + user triggers), `auth.config.ts`, `http.ts`, `email.ts` (Resend); `betterAuth/` (auth component, generated schema); `lib/` (`access.ts` rules, `dto.ts` doc→UI shapes, `returns.ts` return validators, `cascade.ts` deletes + counters, `accounts.ts` signup/erasure, `notify.ts`, `validate.ts`).
+- `lib/` (shared, framework-agnostic where practical) — `types/database.ts` (UI wire shapes; keep in sync with `convex/lib/dto.ts` + `returns.ts`), `validators/` (Zod — run on the client for UX **and** on the server via `parseOrDeny`), `auth-client.ts` / `auth-server.ts`, `hooks/use-paginated-list.ts`, `utils/`.
+- `components/` — grouped by domain (`ui/`, `nav/`, `providers/`, `auth/`, `post/`, `comment/`, `feed/`, `community/`, `notification/`, `profile/`, `search/`, `settings/`, `reserve/`, `admin/`, `legal/`).
+- `app/` — App Router: `(auth)` public, `(protected)` full users, `(reserved)` pre-launch accounts, `(admin)`, `reserve/`, `legal/`, `api/auth/[...all]` (Better Auth proxy), `api/images/[postId]` (private post images).
 
-- `lib/types/` — shared DB model types (`database.ts`). Keep in sync with the schema.
-- `lib/validators/` — Zod schemas. Validate **all** user input here; mirror hard limits in DB `CHECK` constraints (client validation is bypassable).
-- `lib/queries/` — **reads** (server-side). Pure data fetching.
-- `lib/actions/` — **writes** (`"use server"` server actions). Auth-check, validate, mutate, `revalidatePath`.
-- `lib/supabase/` — `client.ts` (browser), `server.ts` (RSC/actions), `middleware.ts` (session refresh, used by `proxy.ts`).
-- `components/` — grouped by domain (`ui/`, `nav/`, `post/`, `comment/`, `feed/`, `community/`, `notification/`, `profile/`, `search/`, `settings/`, `legal/`).
-- `app/` — App Router: `(auth)` public, `(protected)` authed, `legal/` public.
-
-Note: the auth middleware file is **`proxy.ts`** (Next.js 16 naming), not `middleware.ts`.
+Note: the route guard is **`proxy.ts`** (Next.js 16 naming), not `middleware.ts`. It only checks that a session cookie exists; server layouts and Convex functions do the real checks.
 
 ## Conventions (match existing code)
 
-- **Server action shape:** get user via `supabase.auth.getUser()` → `if (!user) return { error: "Not authenticated" }` → `ensureProfileForAuthUser(user)` where a profile FK is needed → Zod-parse → mutate → `revalidatePath(...)` → `return { success: true }`. Surface DB errors through `mapSupabaseUserMessage`.
-- **Reads vs writes stay separated** — don't mutate from `lib/queries/`, don't fetch-for-render from `lib/actions/`.
-- **Notification inserts are best-effort** (fire-and-forget) and gated by RLS (`00005`); never let a failed notification break the parent action.
+- **Mutation shape:** `const viewer = await requireFullAccess(ctx)` (or `requireViewer` for things reserved accounts may do) → load + authorize the target (`requireVisiblePost`, membership, ownership) → `parseOrDeny(zodSchema, value)` → write → keep counters right with `bump` → `notify(...)` if it causes a notification. Declare `args` and `returns` validators.
+- **Errors:** throw `deny("user-safe message")` (a `ConvexError`); the client shows it with `errorMessage(e)`. Never leak internals in messages.
+- **Queries return DTOs** (snake_case, ISO dates, `id`) via `convex/lib/dto.ts`, with a matching validator from `convex/lib/returns.ts`. Paginated lists take `paginationOptsValidator` and are consumed with `usePaginatedList`.
+- **Reads are live:** client components use `useQuery` / `usePaginatedList`; don't add server-side data fetching for render except the tier gates in layouts (`fetchAuthQuery`). Optimistic state should only bridge an in-flight mutation and then defer to the live value.
+- **Notifications** are written only server-side, inside the mutation that causes them (`convex/lib/notify.ts`).
+- **Uploads:** `files:generateUploadUrl` → POST the file → pass the storage id to a mutation that calls `claimImage`. Post images are only ever rendered through `/api/images/[postId]`.
 - **Text rendering:** user text goes through `RichText` (React nodes, mentions → links). Never `dangerouslySetInnerHTML` on user content.
 - **Design tokens** (Editorial Ink identity — warm paper, ink, single vermillion accent, Fraunces + Hanken Grotesk) are CSS variables in `app/globals.css`. Style through tokens, not hard-coded hex.
 - TypeScript, no new runtime deps unless justified. Prefer the shortest correct diff; reuse what's there.
@@ -60,12 +58,12 @@ Note: the auth middleware file is **`proxy.ts`** (Next.js 16 naming), not `middl
 ## Before you call a task done
 
 ```bash
-npx tsc --noEmit      # types
-npx eslint .          # lint (note: theme.tsx / preference-toggle.tsx have 2 pre-existing errors — not yours)
+npx tsc --noEmit      # types (includes convex/)
+npx eslint .          # lint
 npx next build        # catches App Router / server-client boundary issues
 ```
 
-- If your change has runtime surface, actually exercise it (or say clearly that you couldn't, and why — e.g. migration not yet applied). We **cannot** log in as a real user locally, so lean on build + typecheck + the user's spot-checks.
+- If your change has runtime surface, actually exercise it: run `npx convex dev` + `npm run dev` and use the app (local sign-up works; without `RESEND_API_KEY`, confirmation links are printed in the Convex logs). If you couldn't, say so and why.
 - On `main`? **Branch before committing.** Only commit/push when the user asks.
 
 ## Logging your work (this is the "memory" system)
@@ -74,4 +72,4 @@ When you finish a meaningful change, **prepend** an entry to [`docs/DEVLOG.md`](
 
 ## Standing product decisions
 
-- **Moderator role is dormant by design.** `moderator` exists in the schema + RLS (post/comment delete, `canModerate` UI) but nothing can assign it yet — this is intentional (a promote feature is planned, tracked in `docs/TODO.md`). Do **not** "fix" it by ripping moderator support out.
+- **Moderator role is dormant by design.** `moderator` exists in the schema + access rules (post/comment delete, `canModerate` UI) but nothing can assign it yet — this is intentional (a promote feature is planned, tracked in `docs/TODO.md`). Do **not** "fix" it by ripping moderator support out.

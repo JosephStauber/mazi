@@ -1,0 +1,183 @@
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
+
+/**
+ * Mazi's app data. Better Auth's tables (user/session/account/passkey/...) live
+ * in the `betterAuth` component; a profile links to its auth user through
+ * `authUserId` (the Better Auth user id, which is also the JWT `subject`).
+ *
+ * There is no row-level security in Convex: every table is reachable only
+ * through the functions in this directory, and each function enforces its own
+ * access rules via the helpers in `lib/access.ts`. See docs/SECURITY.md.
+ *
+ * Timestamps are Convex's built-in `_creationTime`. Every index implicitly ends
+ * in `_creationTime`, so "by_x" indexes double as chronological orderings.
+ */
+
+export const accessLevel = v.union(v.literal("reserved"), v.literal("full"));
+export const privacyType = v.union(
+  v.literal("public"),
+  v.literal("invite_only")
+);
+export const communityRole = v.union(
+  v.literal("member"),
+  v.literal("moderator"),
+  v.literal("creator")
+);
+export const inviteStatus = v.union(
+  v.literal("pending"),
+  v.literal("accepted"),
+  v.literal("declined"),
+  v.literal("expired")
+);
+export const notificationType = v.union(
+  v.literal("like"),
+  v.literal("comment"),
+  v.literal("follow"),
+  v.literal("community_invite"),
+  v.literal("mention")
+);
+export const signupMode = v.union(v.literal("reservation"), v.literal("open"));
+
+export default defineSchema({
+  profiles: defineTable({
+    authUserId: v.string(),
+    username: v.string(),
+    /** Lowercased handle: case-insensitive uniqueness + prefix lookups. */
+    usernameLower: v.string(),
+    bio: v.optional(v.string()),
+    avatarId: v.optional(v.id("_storage")),
+    /** Pre-launch tier. `reserved` can edit its profile but can't use the app. */
+    accessLevel,
+    followerCount: v.number(),
+    followingCount: v.number(),
+    postCount: v.number(),
+  })
+    .index("by_authUserId", ["authUserId"])
+    .index("by_usernameLower", ["usernameLower"])
+    .index("by_avatar", ["avatarId"])
+    .index("by_accessLevel", ["accessLevel"])
+    .searchIndex("search_username", { searchField: "username" }),
+
+  communities: defineTable({
+    name: v.string(),
+    slug: v.string(),
+    description: v.optional(v.string()),
+    creatorId: v.id("profiles"),
+    privacyType,
+    memberCount: v.number(),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_creator", ["creatorId"])
+    .searchIndex("search_name", { searchField: "name" }),
+
+  communityMembers: defineTable({
+    communityId: v.id("communities"),
+    userId: v.id("profiles"),
+    role: communityRole,
+  })
+    .index("by_community", ["communityId"])
+    .index("by_user", ["userId"])
+    .index("by_community_user", ["communityId", "userId"]),
+
+  communityInvites: defineTable({
+    communityId: v.id("communities"),
+    inviterId: v.id("profiles"),
+    /** Targeted invite. Exactly one of inviteeId / token is set. */
+    inviteeId: v.optional(v.id("profiles")),
+    /** Shareable, multi-use link token. */
+    token: v.optional(v.string()),
+    status: inviteStatus,
+    expiresAt: v.optional(v.number()),
+  })
+    .index("by_token", ["token"])
+    .index("by_invitee", ["inviteeId"])
+    .index("by_inviter", ["inviterId"])
+    .index("by_community", ["communityId"])
+    .index("by_community_invitee", ["communityId", "inviteeId"]),
+
+  posts: defineTable({
+    authorId: v.id("profiles"),
+    content: v.string(),
+    imageId: v.optional(v.id("_storage")),
+    /** Unset for a personal post (shown to followers). */
+    communityId: v.optional(v.id("communities")),
+    likeCount: v.number(),
+    commentCount: v.number(),
+  })
+    .index("by_author", ["authorId"])
+    // Personal posts by author: the following feed reads `communityId = undefined`.
+    .index("by_author_community", ["authorId", "communityId"])
+    .index("by_community", ["communityId"])
+    .index("by_image", ["imageId"]),
+
+  comments: defineTable({
+    postId: v.id("posts"),
+    authorId: v.id("profiles"),
+    content: v.string(),
+    /** Root comment of the thread when this is a reply (replies are one level). */
+    parentId: v.optional(v.id("comments")),
+  })
+    .index("by_post_parent", ["postId", "parentId"])
+    .index("by_parent", ["parentId"])
+    .index("by_author", ["authorId"]),
+
+  likes: defineTable({
+    postId: v.id("posts"),
+    userId: v.id("profiles"),
+  })
+    .index("by_post_user", ["postId", "userId"])
+    .index("by_user", ["userId"]),
+
+  follows: defineTable({
+    followerId: v.id("profiles"),
+    followingId: v.id("profiles"),
+  })
+    .index("by_follower_following", ["followerId", "followingId"])
+    .index("by_follower", ["followerId"])
+    .index("by_following", ["followingId"]),
+
+  notifications: defineTable({
+    /** Recipient. */
+    userId: v.id("profiles"),
+    actorId: v.optional(v.id("profiles")),
+    type: notificationType,
+    postId: v.optional(v.id("posts")),
+    commentId: v.optional(v.id("comments")),
+    communityId: v.optional(v.id("communities")),
+    inviteId: v.optional(v.id("communityInvites")),
+    read: v.boolean(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_read", ["userId", "read"])
+    .index("by_actor", ["actorId"])
+    .index("by_post", ["postId"])
+    .index("by_comment", ["commentId"])
+    .index("by_community", ["communityId"]),
+
+  /** Pre-launch reservation: survey answers + referral graph. No email here. */
+  reservations: defineTable({
+    profileId: v.id("profiles"),
+    reasons: v.array(v.string()),
+    dailySocialMinutes: v.optional(v.number()),
+    referralCode: v.string(),
+    referredBy: v.optional(v.string()),
+  })
+    .index("by_profile", ["profileId"])
+    .index("by_referralCode", ["referralCode"])
+    .index("by_referredBy", ["referredBy"]),
+
+  /** Admin allowlist (reservation dashboard). Seeded with `admin:grant`. */
+  adminUsers: defineTable({
+    profileId: v.id("profiles"),
+  }).index("by_profile", ["profileId"]),
+
+  /**
+   * Single-row server config. `signupMode` decides the tier new accounts get —
+   * never client input. Missing row ⇒ "reservation".
+   */
+  appConfig: defineTable({
+    key: v.literal("singleton"),
+    signupMode,
+  }).index("by_key", ["key"]),
+});

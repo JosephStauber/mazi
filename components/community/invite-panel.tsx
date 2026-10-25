@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { CheckIcon } from "@/components/ui/icon";
-import {
-  inviteByUsername,
-  generateInviteLink,
-} from "@/lib/actions/community";
+import { errorMessage } from "@/lib/utils/errors";
 
 interface InvitePanelProps {
   communityId: string;
@@ -16,6 +16,9 @@ interface InvitePanelProps {
 
 export function InvitePanel({ communityId }: InvitePanelProps) {
   const { toast } = useToast();
+  const inviteByUsername = useMutation(api.communities.inviteByUsername);
+  const createInviteLink = useMutation(api.communities.createInviteLink);
+  const id = communityId as Id<"communities">;
   const [username, setUsername] = useState("");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -25,24 +28,27 @@ export function InvitePanel({ communityId }: InvitePanelProps) {
   async function handleInviteByUsername() {
     if (!username.trim()) return;
     setInviting(true);
-    const result = await inviteByUsername(communityId, username.trim());
-    setInviting(false);
-    if (result?.error) {
-      toast(result.error, "error");
-    } else {
+    try {
+      await inviteByUsername({ communityId: id, username: username.trim() });
       toast(`Invite sent to ${username.trim()}`, "success");
       setUsername("");
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    } finally {
+      setInviting(false);
     }
   }
 
   async function handleGenerateLink() {
     setGenerating(true);
-    const result = await generateInviteLink(communityId);
-    setGenerating(false);
-    if (result?.error) toast(result.error, "error");
-    else if (result?.url) {
-      setInviteUrl(result.url);
+    try {
+      const token = await createInviteLink({ communityId: id });
+      setInviteUrl(`${window.location.origin}/communities/join?token=${token}`);
       setCopied(false);
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    } finally {
+      setGenerating(false);
     }
   }
 

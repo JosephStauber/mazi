@@ -9,50 +9,33 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Spinner } from "@/components/ui/spinner";
 import { InfiniteFeed } from "@/components/feed/infinite-feed";
 import { CreateIcon } from "@/components/ui/icon";
-import { useInfiniteList } from "@/lib/hooks/use-infinite-list";
-import type {
-  Page,
-  PostWithAuthor,
-  CommunityMemberWithProfile,
-} from "@/lib/types/database";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import { usePaginatedList } from "@/lib/hooks/use-paginated-list";
 
 interface CommunityTabsProps {
-  initialPosts: PostWithAuthor[];
-  postsCursor: string | null;
-  loadMorePosts: (cursor: string) => Promise<Page<PostWithAuthor>>;
-  initialMembers: CommunityMemberWithProfile[];
-  membersCursor: string | null;
+  communityId: string;
   /** Total member count (all pages), for the Members tab. */
   membersCount: number;
-  loadMoreMembers: (
-    cursor: string
-  ) => Promise<Page<CommunityMemberWithProfile>>;
   currentUserId: string;
   canModerate: boolean;
 }
 
 export function CommunityTabs({
-  initialPosts,
-  postsCursor,
-  loadMorePosts,
-  initialMembers,
-  membersCursor,
+  communityId,
   membersCount,
-  loadMoreMembers,
   currentUserId,
   canModerate,
 }: CommunityTabsProps) {
   const [tab, setTab] = useState<"posts" | "members">("posts");
+  const id = communityId as Id<"communities">;
+  const posts = usePaginatedList(api.feed.community, { communityId: id });
   const {
     items: members,
     loading: membersLoading,
     done: membersDone,
     sentinelRef: membersSentinel,
-  } = useInfiniteList({
-    initialItems: initialMembers,
-    initialCursor: membersCursor,
-    loadMore: loadMoreMembers,
-  });
+  } = usePaginatedList(api.communities.members, tab === "members" ? { communityId: id } : "skip", 30);
 
   return (
     <div>
@@ -66,21 +49,18 @@ export function CommunityTabs({
       />
 
       {tab === "posts" ? (
-        initialPosts.length === 0 ? (
-          <EmptyState
-            icon={<CreateIcon size={24} />}
-            title="No posts yet"
-            description="Be the first to post in this community."
-          />
-        ) : (
-          <InfiniteFeed
-            initialPosts={initialPosts}
-            initialCursor={postsCursor}
-            currentUserId={currentUserId}
-            loadMore={loadMorePosts}
-            canModerate={canModerate}
-          />
-        )
+        <InfiniteFeed
+          feed={posts}
+          currentUserId={currentUserId}
+          canModerate={canModerate}
+          empty={
+            <EmptyState
+              icon={<CreateIcon size={24} />}
+              title="No posts yet"
+              description="Be the first to post in this community."
+            />
+          }
+        />
       ) : (
         <>
           <ul className="divide-y divide-border">

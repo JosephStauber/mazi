@@ -2,6 +2,8 @@
 
 A minimalist, privacy-first social platform. No algorithm. No ads. Just people.
 
+> **Out of date:** Mazi now runs on **Convex + Better Auth + Resend** (Supabase was removed on 2026-10-24). For setup and architecture, use [`docs/SETUP.md`](docs/SETUP.md) and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); the rest of this README predates that move.
+
 ## Tech stack
 
 - **Next.js 16** (App Router) with TypeScript

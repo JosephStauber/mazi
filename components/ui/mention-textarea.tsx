@@ -7,8 +7,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { useConvex } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Avatar } from "@/components/ui/avatar";
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils/cn";
 import type { ProfileRef } from "@/lib/types/database";
 
@@ -36,6 +37,7 @@ export const MentionTextarea = forwardRef<
   forwardedRef
 ) {
   const innerRef = useRef<HTMLTextAreaElement>(null);
+  const convex = useConvex();
   useImperativeHandle(forwardedRef, () => innerRef.current!, []);
 
   const [results, setResults] = useState<ProfileRef[]>([]);
@@ -82,17 +84,16 @@ export const MentionTextarea = forwardRef<
     clearDebounce();
     const id = ++reqId.current;
     debounceRef.current = setTimeout(async () => {
-      const supabase = createClient();
-      let q = supabase
-        .from("profiles")
-        .select("id, username, avatar_url")
-        .limit(6);
-      q = query ? q.ilike("username", `${query}%`) : q.order("username");
-      const { data } = await q;
+      let data: ProfileRef[] = [];
+      try {
+        data = await convex.query(api.profiles.mentionCandidates, { prefix: query });
+      } catch {
+        data = [];
+      }
       if (id !== reqId.current) return;
-      setResults(data ?? []);
+      setResults(data);
       setActive(0);
-      setOpen((data ?? []).length > 0);
+      setOpen(data.length > 0);
     }, 140);
   }
 

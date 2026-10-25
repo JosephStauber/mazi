@@ -2,20 +2,24 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { MentionTextarea } from "@/components/ui/mention-textarea";
 import { useToast } from "@/components/ui/toast";
 import { ImageIcon, CloseIcon } from "@/components/ui/icon";
-import { createPost } from "@/lib/actions/post";
 import { cn } from "@/lib/utils/cn";
+import { errorMessage } from "@/lib/utils/errors";
+import { uploadImage } from "@/lib/utils/upload";
+import { POST_IMAGE_MAX_BYTES } from "@/lib/validators/post";
 
 const MAX = 2000;
 
 interface CommunityOption {
-  community_id: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  communities: any;
+  id: string;
+  name: string;
 }
 
 interface PostComposerProps {
@@ -35,6 +39,8 @@ export function PostComposer({
 }: PostComposerProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const createPost = useMutation(api.posts.create);
+  const generateUploadUrl = useMutation(api.files.generateUploadUrl);
   const [loading, setLoading] = useState(false);
   const [value, setValue] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -69,7 +75,7 @@ export function PostComposer({
       removeImage();
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > POST_IMAGE_MAX_BYTES) {
       toast("Image must be under 5MB", "error");
       removeImage();
       return;
@@ -99,16 +105,27 @@ export function PostComposer({
   }
 
   async function handleSubmit(formData: FormData) {
-    // The server requires non-empty text (createPostSchema), so an image-only
+    // The server requires non-empty text (postContentSchema), so an image-only
     // post would fail after upload — gate on text to match that contract.
     if (!value.trim()) {
       toast("Write something to post", "error");
       return;
     }
     setLoading(true);
-    const result = await createPost(formData);
-    if (result?.error) {
-      toast(result.error, "error");
+    try {
+      const file = imageInputRef.current?.files?.[0];
+      const imageId =
+        file && file.size > 0
+          ? await uploadImage(file, () => generateUploadUrl())
+          : undefined;
+      const communityId = (formData.get("community_id") as string) || undefined;
+      await createPost({
+        content: value,
+        communityId: communityId as Id<"communities"> | undefined,
+        imageId,
+      });
+    } catch (e) {
+      toast(errorMessage(e), "error");
       setLoading(false);
       return;
     }
@@ -117,14 +134,8 @@ export function PostComposer({
     removeImage();
     setLoading(false);
     toast("Posted", "success");
+    // Feeds are live queries — no refresh needed.
     if (redirectOnSuccess) router.push(redirectOnSuccess);
-    else router.refresh();
-  }
-
-  function getCommunityName(c: CommunityOption): string | null {
-    if (!c.communities) return null;
-    if (Array.isArray(c.communities)) return c.communities[0]?.name ?? null;
-    return c.communities.name ?? null;
   }
 
   const remaining = MAX - value.length;
@@ -215,14 +226,11 @@ export function PostComposer({
               className="h-9 rounded-full border border-border bg-surface px-3 text-sm text-foreground focus:border-foreground focus:outline-none"
             >
               <option value="">Personal post</option>
-              {communities.map((c) => {
-                const name = getCommunityName(c);
-                return name ? (
-                  <option key={c.community_id} value={c.community_id}>
-                    {name}
-                  </option>
-                ) : null;
-              })}
+              {communities.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
             </select>
           )
         )}

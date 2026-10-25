@@ -1,13 +1,14 @@
-import { redirect } from "next/navigation";
-import { getCurrentUser, getUserCommunities } from "@/lib/queries/profiles";
+"use client";
+
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { useViewer } from "@/components/providers/viewer";
 import { PostComposer } from "@/components/post/post-composer";
 import { PageHeader } from "@/components/nav/page-header";
 
-export default async function ComposePage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
-  const communities = await getUserCommunities(user.id);
+export default function ComposePage() {
+  const user = useViewer();
+  const communities = useQuery(api.profiles.myCommunities) ?? [];
 
   return (
     <div>

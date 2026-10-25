@@ -7,33 +7,33 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PostCard } from "@/components/post/post-card";
 import { Spinner } from "@/components/ui/spinner";
 import { CreateIcon, ImageIcon } from "@/components/ui/icon";
-import { useInfiniteList } from "@/lib/hooks/use-infinite-list";
-import type { Page, PostWithAuthor } from "@/lib/types/database";
+import { FeedSkeleton } from "@/components/ui/skeleton";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import { usePaginatedList } from "@/lib/hooks/use-paginated-list";
 
 interface ProfileTabsProps {
-  initialPosts: PostWithAuthor[];
-  postsCursor: string | null;
+  userId: string;
   /** Total post count (all pages), for the header/Posts tab. */
   postsCount: number;
-  loadMore: (cursor: string) => Promise<Page<PostWithAuthor>>;
   currentUserId: string;
   isOwnProfile: boolean;
 }
 
 export function ProfileTabs({
-  initialPosts,
-  postsCursor,
+  userId,
   postsCount,
-  loadMore,
   currentUserId,
   isOwnProfile,
 }: ProfileTabsProps) {
   const [tab, setTab] = useState<"posts" | "media">("posts");
-  const { items: posts, loading, done, sentinelRef } = useInfiniteList({
-    initialItems: initialPosts,
-    initialCursor: postsCursor,
-    loadMore,
-  });
+  const {
+    items: posts,
+    firstLoad,
+    loading,
+    done,
+    sentinelRef,
+  } = usePaginatedList(api.posts.byAuthor, { userId: userId as Id<"profiles"> });
 
   // Media is derived from the posts loaded so far; scrolling the Posts tab loads
   // more and grows it.
@@ -50,7 +50,9 @@ export function ProfileTabs({
         ]}
       />
 
-      {tab === "posts" ? (
+      {firstLoad ? (
+        <FeedSkeleton count={3} />
+      ) : tab === "posts" ? (
         posts.length === 0 ? (
           <EmptyState
             icon={<CreateIcon size={24} />}

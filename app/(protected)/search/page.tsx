@@ -1,12 +1,8 @@
-import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/queries/profiles";
 import { SearchView } from "@/components/search/search-view";
 import { PageHeader } from "@/components/nav/page-header";
 
-export default async function SearchPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
+export default function SearchPage() {
+  // The protected layout already guarantees a full-access session.
   return (
     <div>
       <PageHeader title="Search" />
