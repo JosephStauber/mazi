@@ -6,6 +6,7 @@ import { DocHeader, Section, P, UL, LI, Strong } from "@/components/legal/doc";
 export const metadata: Metadata = {
   title: `Community Guidelines — ${legal.appName}`,
   description: `What's welcome on ${legal.appName}, and what isn't.`,
+  alternates: { canonical: "/legal/guidelines" },
 };
 
 export default function CommunityGuidelines() {

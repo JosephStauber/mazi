@@ -6,6 +6,7 @@ import { DocHeader, Section, P, UL, LI, Strong } from "@/components/legal/doc";
 export const metadata: Metadata = {
   title: `Cookie Notice — ${legal.appName}`,
   description: `${legal.appName} uses only essential cookies — no tracking or advertising.`,
+  alternates: { canonical: "/legal/cookies" },
 };
 
 export default function CookieNotice() {

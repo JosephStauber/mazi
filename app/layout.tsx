@@ -7,6 +7,7 @@ import { CookieNotice } from "@/components/legal/cookie-notice";
 import { ConvexClientProvider } from "@/components/providers/convex-client-provider";
 import { PrivateAnalytics } from "@/components/providers/analytics";
 import { getToken } from "@/lib/auth-server";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, SITE_URL } from "@/lib/site";
 
 const displaySerif = Fraunces({
   variable: "--font-display",
@@ -20,10 +21,25 @@ const bodySans = Hanken_Grotesk({
   subsets: ["latin"],
 });
 
+// Canonical links are set per public page, not here: a root canonical would be
+// inherited by every page and point them all at "/".
 export const metadata: Metadata = {
-  title: "Mazi — Privacy-first social",
-  description:
-    "A minimalist, privacy-first social platform. No algorithm. No ads. Just people.",
+  metadataBase: new URL(SITE_URL),
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+  },
 };
 
 export default async function RootLayout({

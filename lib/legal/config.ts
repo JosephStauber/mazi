@@ -26,7 +26,7 @@ export const legal = {
   /** Public site origin (used in policy text + links). Falls back to env. */
   siteUrl:
     process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
-    "https://mazi.social",
+    "https://www.mazi.social",
 
   /** Minimum age to use the service. 13 satisfies US COPPA; some EU states require 16. */
   minimumAge: 13,

@@ -20,6 +20,7 @@ Priority buckets: **Now** (do next) · **Next** (soon) · **Later** (someday) ·
 - [ ] **Smoke-test what the migration couldn't exercise:** image upload on a post + avatar (incl. an invite-only community image loading for a member and 404ing for a non-member), passkey add + sign-in on a real device, password reset email, data export download, invite by username + invite link + decline, community moderator delete, the communities feed filter. Verified locally on 2026-10-24: reserve signup → email confirm → `/welcome`, reserved user locked out of `/home`, open mode + promotion, post, like, comment, create community, admin dashboard, account deletion erasing every table.
 - [ ] **(Recommended) Add a captcha to signup/reserve.** Better Auth's IP rate limit (10 sign-ups/IP/hour) is the only anti-abuse control. Better Auth has a captcha plugin (Cloudflare Turnstile / reCAPTCHA / hCaptcha).
 - [ ] **Replace placeholder pricing.** `PRICING` in `lib/reserve/config.ts`.
+- [ ] **SEO: finish the off-site steps.** (1) In Vercel → Domains, make `mazi.social` → `www.mazi.social` a permanent redirect (it's a 307 today). (2) Verify `www.mazi.social` in Google Search Console, submit `https://www.mazi.social/sitemap.xml`, request indexing of `/`. (3) Once official social accounts exist, add them to `sameAs` in `app/page.tsx`. Canonical origin lives in `lib/site.ts` — change it there if the domain choice changes.
 - [ ] **Launch-time: flip mode + grant access + reconcile rewards.** `npx convex run --prod admin:setSignupMode '{"mode":"open","promoteReserved":true}'` (repeat until all reserved accounts are promoted), set `NEXT_PUBLIC_LAUNCH_MODE=open` + redeploy, then turn confirmed referrals into the promised free weeks once billing exists. Checklist in `ONBOARDING.md`.
 
 ## Next
@@ -44,6 +45,7 @@ Priority buckets: **Now** (do next) · **Next** (soon) · **Later** (someday) ·
 - [ ] **Direct messages** (optional, post-MVP).
 - [ ] **Email notifications** (optional; Resend is already wired).
 - [ ] **Community rules / guidelines display** on the community page.
+- [ ] **SEO polish.** A short About/FAQ section on the landing page (more indexable text; the page also jumps h1 → h3); `noindex` + own titles on `/login`, `/signup`, `/forgot-password`, `/reset-password`; Fraunces in `app/opengraph-image.tsx` (it uses the renderer's default font); consider caching the landing page (root layout's `getToken()` makes every page `no-store`).
 - [ ] **Substring search.** Search uses Convex full-text (word + last-term prefix) and a handle-prefix index; `%term%` matching from the Supabase version isn't replicated.
 
 ## Housekeeping
@@ -56,4 +58,4 @@ Priority buckets: **Now** (do next) · **Next** (soon) · **Later** (someday) ·
 
 ## Recently done
 
-Full history in [`DEVLOG.md`](DEVLOG.md). Latest: **High review findings H-2/H-3/H-4/H-6** (2026-10-25) — per-account write rate limits, orphaned-upload sweep, precomputed admin stats, docs cleanup. Before that: **dependency CVE bump** (2026-10-25) — `next` 16.4.3, `zod` 4.6.7, transitive fixes; `npm audit` clean. Before that: **Supabase → Convex + Better Auth + Resend migration** (2026-10-24) — new backend in `convex/`, reactive UI, passkeys, OAuth scaffolding, private post-image delivery (closes the public-bucket gap), server-side notifications.
+Full history in [`DEVLOG.md`](DEVLOG.md). Latest: **SEO basics** (2026-10-25) — robots.txt + sitemap (they were redirecting to /login), canonical URLs, Open Graph/Twitter tags + preview image, Organization/WebSite JSON-LD. Before that: **High review findings H-2/H-3/H-4/H-6** (2026-10-25) — per-account write rate limits, orphaned-upload sweep, precomputed admin stats, docs cleanup. Before that: **dependency CVE bump** (2026-10-25) — `next` 16.4.3, `zod` 4.6.7, transitive fixes; `npm audit` clean. Before that: **Supabase → Convex + Better Auth + Resend migration** (2026-10-24) — new backend in `convex/`, reactive UI, passkeys, OAuth scaffolding, private post-image delivery (closes the public-bucket gap), server-side notifications.

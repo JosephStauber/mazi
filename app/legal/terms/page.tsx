@@ -14,6 +14,7 @@ import {
 export const metadata: Metadata = {
   title: `Terms of Service — ${legal.appName}`,
   description: `The rules for using ${legal.appName}.`,
+  alternates: { canonical: "/legal/terms" },
 };
 
 export default function TermsOfService() {
