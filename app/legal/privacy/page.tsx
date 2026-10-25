@@ -59,9 +59,18 @@ export default function PrivacyPolicy() {
           </LI>
         </UL>
         <P>
-          We do <Strong>not</Strong> use advertising trackers, third-party
-          analytics, or behavioural profiling, and we do not build advertising
+          We do <Strong>not</Strong> use advertising trackers, cross-site
+          tracking, or behavioural profiling, and we do not build advertising
           profiles about you.
+        </P>
+        <P>
+          To understand how many people visit, we use{" "}
+          <Strong>Vercel Web Analytics</Strong>, which counts page views in
+          aggregate. It sets no cookies and stores nothing on your device;
+          visits are distinguished by a temporary hash of request details that
+          is discarded within 24 hours. We remove usernames, post and community
+          identifiers, and query strings from page addresses before anything is
+          sent, and we never link these statistics to your account.
         </P>
       </Section>
 

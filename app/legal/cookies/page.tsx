@@ -15,8 +15,10 @@ export default function CookieNotice() {
 
       <Section title="We only use essential cookies">
         <P>
-          {legal.appName} does not use advertising or tracking cookies, and we
-          do not run third-party analytics. Because the cookies we use are
+          {legal.appName} does not use advertising, tracking, or analytics
+          cookies. Our page-view statistics (Vercel Web Analytics) are
+          cookieless and store nothing on your device. Because the cookies we
+          use are
           strictly necessary to provide a service you asked for, we do not need
           to ask for consent to set them — but we want to be transparent about
           what they do.

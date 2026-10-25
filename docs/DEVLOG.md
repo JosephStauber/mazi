@@ -17,6 +17,13 @@ The running memory of the project. **Every meaningful change gets an entry**, ne
 
 ## Entries
 
+## 2026-10-24 — Vercel Web Analytics (cookieless, redacted)
+**By:** Claude (agent)
+**Summary:** The Vercel dashboard showed no traffic because `@vercel/analytics` was never installed. Added it, wrapped in `PrivateAnalytics`, whose `beforeSend` drops query strings/hashes (reset/invite tokens, search terms, referral codes) and collapses `/profile/*`, `/communities/*` (except `join`) and `/post/*` to route placeholders. Recorded as D15 (amends D4's analytics clause); disclosed in the privacy policy, cookie notice, and subprocessor list.
+**Changed:** `package.json`, `components/providers/analytics.tsx` (new), `app/layout.tsx`, `lib/legal/config.ts`, `app/legal/privacy/page.tsx`, `app/legal/cookies/page.tsx`, `docs/DECISIONS.md`.
+**Why:** User request; needed traffic numbers for the deployed site.
+**Follow-ups:** after deploy, confirm Web Analytics is enabled for the Vercel project and pageviews appear. Add any new id-bearing route to the redaction list.
+
 ## 2026-10-24 — Supabase → Convex + Better Auth + Resend (fresh start)
 **By:** Claude (agent)
 **Summary:** Replaced Supabase (Postgres + Auth + Storage + RLS) with Convex (data, functions, storage, live queries), Better Auth (email + password with required verification, passkeys, Google/Apple scaffolded), and Resend (auth email). The UI is now reactive. The new backend started empty — no data migrated (the Supabase project was paused; user chose a fresh start).

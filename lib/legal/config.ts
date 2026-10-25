@@ -51,6 +51,12 @@ export const legal = {
         "Sending account emails (email confirmation and password reset) to your address",
       site: "https://resend.com/legal/privacy-policy",
     },
+    {
+      name: "Vercel",
+      purpose:
+        "Hosting the website, and cookieless, aggregate page-view statistics (Vercel Web Analytics)",
+      site: "https://vercel.com/legal/privacy-policy",
+    },
   ],
 } as const;
 
