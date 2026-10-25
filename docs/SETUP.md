@@ -25,7 +25,7 @@ The first run asks you to log in and pick or create a project, then writes `CONV
 Add the rest of `.env.local` yourself (all public):
 
 ```
-NEXT_PUBLIC_CONVEX_SITE_URL=https://<deployment>.convex.site   # same name as the .convex.cloud URL; local backend: http://127.0.0.1:3211
+# NEXT_PUBLIC_CONVEX_SITE_URL=https://<deployment>.convex.site  # optional — derived from NEXT_PUBLIC_CONVEX_URL if unset
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 # NEXT_PUBLIC_LAUNCH_MODE=open   # only after launch (see ONBOARDING.md)
